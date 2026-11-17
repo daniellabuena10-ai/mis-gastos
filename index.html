@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Ahorra+</title>
 <meta name="description" content="Controla tus gastos, ingresos, presupuesto y metas de ahorro.">
 <meta name="theme-color" content="#06080b">
@@ -135,7 +135,7 @@ nav.tabbar button.on{color:var(--accent)}
 .chip span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chip.on{border-color:var(--accent);background:var(--accent-soft)}
 .field{display:block;margin-bottom:12px;font-weight:600}
-.field input,.field select,.input{width:100%;font-size:15px;font-weight:500;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:var(--soft);color:var(--ink);margin-top:5px}
+.field input,.field select,.input{width:100%;font-size:16px;font-weight:500;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:var(--soft);color:var(--ink);margin-top:5px}
 .field input:focus,.field select:focus,.input:focus{border-color:var(--accent);outline:none;background:var(--surface)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .check{display:flex;align-items:center;gap:10px;font-size:14px;margin:4px 0 14px;cursor:pointer}
@@ -362,6 +362,11 @@ nav.tabbar button{font-size:10.5px}
 .brand p{margin:0;color:var(--muted);font-size:14px;max-width:300px}
 #authForm h2{font-family:var(--display);font-size:20px;margin:0 0 6px}
 #splash{position:fixed;inset:0;display:grid;place-items:center;color:var(--muted);font-weight:600}
+
+/* Sin zoom al tocar */
+html,body,button,a,input,select,textarea,label{touch-action:manipulation}
+input,select,textarea{font-size:max(16px,1em)}
+*{-webkit-tap-highlight-color:transparent}
 </style>
 </head>
 <body>
@@ -409,5 +414,6 @@ nav.tabbar button{font-size:10.5px}
 <script src="config.js"></script>
 <script src="icons.js"></script>
 <script src="app.js"></script>
+<script>(function(){let t=0;document.addEventListener("touchend",e=>{const n=Date.now();if(n-t<=300&&!e.target.closest("input,textarea,select"))e.preventDefault();t=n},{passive:false});["gesturestart","gesturechange"].forEach(ev=>document.addEventListener(ev,e=>e.preventDefault(),{passive:false}))})();</script>
 </body>
 </html>
