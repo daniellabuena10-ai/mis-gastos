@@ -311,6 +311,23 @@ textarea.csv{background:var(--surface-2);border-color:var(--line);border-radius:
 }
 [hidden]{display:none!important}
 #report{display:none}
+.hdr-right .bell{width:38px;height:38px}
+@media (max-width:440px){header h1{font-size:22px}.monthnav span{min-width:0;font-size:12.5px;padding:0 2px}.monthnav button{width:26px}.hdr-right{gap:6px}}
+body.hide-amounts .big,body.hide-amounts .amt,body.hide-amounts .flow .v,body.hide-amounts .trio .v,body.hide-amounts .stat .v,body.hide-amounts .day .num,body.hide-amounts .hrow b,body.hide-amounts .insight b{filter:blur(9px);user-select:none}
+.insight-mini{display:grid;grid-template-columns:40px 1fr auto;gap:12px;align-items:center;cursor:pointer;padding:14px 16px}
+.ob-dots{display:flex;gap:6px;margin:-4px 0 14px}.ob-dots i{width:22px;height:4px;border-radius:2px;background:var(--line)}.ob-dots i.on{background:var(--accent)}
+#lock{position:fixed;inset:0;z-index:60;background:radial-gradient(600px 400px at 50% 0%,rgba(46,229,157,.18),transparent 60%),#06080b;display:grid;place-items:center;padding:20px}
+.lk{display:flex;flex-direction:column;align-items:center;gap:14px;width:100%;max-width:300px}
+.lk-logo{width:64px;height:64px;border-radius:18px;box-shadow:0 16px 40px -10px rgba(46,229,157,.5)}
+.lk-t{font-weight:700;font-size:17px}
+.lk-dots{display:flex;gap:14px;margin:6px 0}.lk-dots i{width:13px;height:13px;border-radius:50%;border:2px solid rgba(255,255,255,.35)}.lk-dots i.on{background:var(--accent);border-color:var(--accent)}
+.lk-dots.shake{animation:shake .35s}@keyframes shake{25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+.lk-msg{min-height:18px;color:var(--neg);font-size:13px}
+.lk-pad{display:grid;grid-template-columns:repeat(3,72px);gap:16px}
+.lk-pad button{width:72px;height:72px;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--ink);font:600 26px var(--body);display:grid;place-items:center;cursor:pointer}
+.lk-pad button:active{background:rgba(46,229,157,.2)}
+.lk-pad .i{width:26px;height:26px}
+.lk-forgot{margin-top:6px;color:var(--muted)}
 .ticket{margin:4px 0 14px;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
 .ticket .btn.sm{display:inline-flex}
 .tk-thumb{max-width:140px;max-height:160px;border-radius:12px;border:1px solid var(--line);cursor:zoom-in;display:block}
@@ -363,7 +380,7 @@ nav.tabbar button{font-size:10.5px}
       <span id="month"></span>
       <button id="next" aria-label="Mes siguiente"><svg class="i" viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6"/></svg></button>
     </div>
-    <button class="bell" id="bell" aria-label="Avisos"><svg class="i" viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg><span class="badge" id="badge" hidden></span></button></div>
+    <button class="bell" id="eye" aria-label="Ocultar cifras"></button><button class="bell" id="bell" aria-label="Avisos"><svg class="i" viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg><span class="badge" id="badge" hidden></span></button></div>
   </header>
   <div class="banner" id="banner"></div>
   <main id="view"></main>
@@ -382,6 +399,7 @@ nav.tabbar button{font-size:10.5px}
 
 <div class="sheet-bg" id="sheetBg"><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
 <div id="toastHost"></div>
+<div id="lock" hidden></div>
 <div id="report"></div>
 </div>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>

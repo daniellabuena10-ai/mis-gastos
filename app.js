@@ -47,7 +47,8 @@ const local={
 const localStore={save(){local.save()},del(){local.save()},saveAj(){local.save()}};
 
 let unsubs=[],me=null;
-function resetState(){state={mov:{},fijos:{},metas:{},aj:{presupuesto:0,porCat:{},cats:null,catsIng:null,watchlist:null}};loaded={mov:false,fijos:false};cur=new Date();cur.setDate(1);view="inicio";invMounted=false;const iw=document.getElementById("invWidgets");if(iw)iw.innerHTML=""}
+let ajLoaded=false,onboardShown=false;
+function resetState(){ajLoaded=false;onboardShown=false;state={mov:{},fijos:{},metas:{},aj:{presupuesto:0,porCat:{},cats:null,catsIng:null,watchlist:null}};loaded={mov:false,fijos:false};cur=new Date();cur.setDate(1);view="inicio";invMounted=false;const iw=document.getElementById("invWidgets");if(iw)iw.innerHTML=""}
 async function initStore(){
   if(!window.firebase||!window.FIREBASE_CONFIG||!FIREBASE_CONFIG.apiKey){document.getElementById("splash").textContent="Falta configurar la app.";return}
   firebase.initializeApp(FIREBASE_CONFIG);
@@ -58,7 +59,7 @@ async function initStore(){
     document.getElementById("splash")?.remove();
     unsubs.forEach(f=>f());unsubs=[];resetState();me=u;
     if(!u){store=null;showAuth();return}
-    hideAuth();startData(fdb,u);startGroups(fdb,u);setView("inicio");
+    hideAuth();startData(fdb,u);startGroups(fdb,u);setView("inicio");if(lockCfg())showLock();
     const hm=location.hash.match(/^#unir-([A-Za-z0-9]{10,40})$/);if(hm){history.replaceState(null,"",location.pathname);setTimeout(()=>joinGroup(hm[1]),600)}
   });
 }
@@ -79,12 +80,12 @@ function startData(fdb,u){
       const o={};snap.docs.forEach(d=>{o[d.id]={...d.data(),id:d.id}});state[k]=o;
       if(!snap.metadata.fromCache){
         if(first){first=false;if(--pending===0){clearTimeout(timer);hideBanner()}}
-        if(k in loaded&&!loaded[k]){loaded[k]=true;generarFijos()}
+        if(k in loaded&&!loaded[k]){loaded[k]=true;generarFijos();maybeOnboard()}
       }
       render();
     },()=>{clearTimeout(timer);showBanner("No se pudieron cargar tus datos. Comprueba tu conexión.")}));
   }
-  unsubs.push(ajRef.onSnapshot(s=>{if(s.exists){const d=s.data();state.aj={presupuesto:d.presupuesto||0,porCat:{...(d.porCat||{})},cats:d.cats||null,catsIng:d.catsIng||null,watchlist:Array.isArray(d.watchlist)?d.watchlist:null};render();if(view==="inversion")mountWatchlist()}},()=>{}));
+  unsubs.push(ajRef.onSnapshot(s=>{if(s.exists){const d=s.data();state.aj={presupuesto:d.presupuesto||0,porCat:{...(d.porCat||{})},cats:d.cats||null,catsIng:d.catsIng||null,watchlist:Array.isArray(d.watchlist)?d.watchlist:null,onboarded:!!d.onboarded};render();if(view==="inversion")mountWatchlist()}ajLoaded=true;maybeOnboard()},()=>{}));
   const queues={};
   const serial=(key,fn)=>{queues[key]=(queues[key]||Promise.resolve()).then(fn).catch(fail);return queues[key]};
   store={
@@ -159,6 +160,121 @@ function openBorrar(){
 
 
 
+
+
+/* ================= Resumen inteligente ================= */
+const normNota=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9 ]/g," ").replace(/\s+/g," ").trim();
+function computeInsights(){
+  const out=[],all=movsMes(),gs=gastos(all);if(!gs.length&&!Object.keys(state.mov).length)return out;
+  // gastos hormiga
+  const small=gs.filter(g=>+g.importe<=10);
+  if(small.length>=4){const by={};small.forEach(g=>{const k=normNota(g.nota)||catOf(g.cat).n.toLowerCase();by[k]=by[k]||{n:0,v:0,lab:g.nota||catOf(g.cat).n};by[k].n++;by[k].v+=+g.importe});
+    const top=Object.values(by).sort((a,b)=>b.v-a.v)[0];
+    out.push({ic:"coffee",c:"#f3c969",t:`Gastos hormiga: <b>${fmt0(sum(small))}</b> en ${small.length} compras pequeñas este mes`,d:top&&top.n>1?`Lo que más se repite: ${esc(top.lab)} (${top.n} veces, ${fmt(top.v)}).`:"Pequeñas compras que, sumadas, se notan."})}
+  // suscripciones (mismo concepto y precio parecido en 2+ meses, sin ser fijo)
+  const since=new Date(cur.getFullYear(),cur.getMonth()-3,1),sk=monthKey(since);
+  const grp={};Object.values(state.mov).filter(m=>tipoOf(m)==="gasto"&&!m.fijo&&m.fecha>=sk&&normNota(m.nota)).forEach(m=>{const k=normNota(m.nota);(grp[k]=grp[k]||[]).push(m)});
+  const subs=Object.values(grp).filter(l=>{const ms=new Set(l.map(m=>m.fecha.slice(0,7)));if(ms.size<2)return false;const a=l.map(m=>+m.importe),mn=Math.min(...a),mx=Math.max(...a);return mx<=mn*1.15&&mx<=200}).map(l=>({n:l[0].nota,v:+l[l.length-1].importe}));
+  if(subs.length)out.push({ic:"repeat",c:"#a5b4fc",t:`Posible${subs.length>1?"s":""} suscripci${subs.length>1?"ones":"ón"}: <b>${subs.slice(0,3).map(s=>esc(s.n)).join(", ")}</b>`,d:`Suman unos ${fmt(sum(subs.map(s=>({importe:s.v}))))} al mes. Puedes convertirlas en gastos fijos o darte de baja de las que no uses.`});
+  // categorías que suben
+  const prev=gastos(movsMes(new Date(cur.getFullYear(),cur.getMonth()-1,1))),now=new Date(),isThis=monthKey(now)===monthKey(cur),lim=isThis?now.getDate():31;
+  const tc={},tp={};gs.forEach(g=>tc[g.cat]=(tc[g.cat]||0)+(+g.importe));prev.filter(g=>+g.fecha.slice(8,10)<=lim).forEach(g=>tp[g.cat]=(tp[g.cat]||0)+(+g.importe));
+  const up=Object.keys(tc).map(k=>({k,d:tc[k]-(tp[k]||0),p:tp[k]?(tc[k]-tp[k])/tp[k]:null})).filter(x=>x.d>20&&(x.p===null||x.p>.2)).sort((a,b)=>b.d-a.d)[0];
+  if(up){const c=catOf(up.k,"gasto");out.push({ic:iconOf(c),c:c.c,t:`<b>${esc(c.n)}</b>: ${fmt0(up.d)} más que el mes pasado${isThis?" a estas alturas":""}`,d:up.p!==null?`Un ${Math.round(up.p*100)} % más. Si no era algo puntual, quizá merezca un límite.`:"El mes pasado no tuviste gastos en esta categoría."})}
+  // día de la semana
+  if(gs.length>=8){const dw=[0,0,0,0,0,0,0];gs.forEach(g=>dw[new Date(g.fecha+"T12:00").getDay()]+=+g.importe);const i=dw.indexOf(Math.max(...dw)),names=["los domingos","los lunes","los martes","los miércoles","los jueves","los viernes","los sábados"];
+    out.push({ic:"calendar",c:"#7dd3fc",t:`Gastas más <b>${names[i]}</b>`,d:`${fmt0(dw[i])} este mes, el ${Math.round(dw[i]/sum(gs)*100)} % del total.`})}
+  // buen ritmo
+  const I=sum(ingresos(all)),G=sum(gs);if(I>0&&(I-G)/I>=.2)out.push({ic:"trophy",c:"#2ee59d",t:`¡Buen mes! Estás ahorrando el <b>${Math.round((I-G)/I*100)} %</b> de tus ingresos`,d:"Por encima del 20 % que se suele recomendar."});
+  return out;
+}
+function insightsCard(){const ins=computeInsights();if(!ins.length)return"";
+  return `<div class="card"><h3 style="margin-bottom:6px">Resumen inteligente</h3>${ins.map(x=>`<div class="tip">${icoHTML({i:x.ic,c:x.c})}<div><div style="font-weight:600">${x.t}</div><div class="small">${x.d}</div></div></div>`).join("")}</div>`}
+
+/* ================= Ocultar cifras ================= */
+function applyHide(){let on=false;try{on=localStorage.getItem("ahorra-hide")==="1"}catch(e){}document.body.classList.toggle("hide-amounts",on);
+  const b=document.getElementById("eye");if(b){b.innerHTML=on?svg("eyeOff"):svg("eye");b.setAttribute("aria-label",on?"Mostrar cifras":"Ocultar cifras")}}
+function toggleHide(){let on=document.body.classList.contains("hide-amounts");try{localStorage.setItem("ahorra-hide",on?"0":"1")}catch(e){}applyHide()}
+
+/* ================= Bienvenida ================= */
+function maybeOnboard(){
+  if(onboardShown||!me||!ajLoaded||!loaded.mov||!loaded.fijos)return;
+  if(state.aj.onboarded||Object.keys(state.mov).length||Object.keys(state.fijos).length||state.aj.presupuesto)return;
+  onboardShown=true;setTimeout(()=>onboardStep(0,{}),400);
+}
+function finishOnboard(){state.aj.onboarded=true;saveAj()}
+function onboardStep(n,d){
+  const dots=`<div class="ob-dots">${[0,1,2].map(i=>`<i class="${i<=n?"on":""}"></i>`).join("")}</div>`;
+  if(n===0){openSheet(`<h2>Bienvenido a Ahorra+${me.displayName?", "+esc(me.displayName.split(" ")[0]):""}</h2>${dots}
+    <p class="small">Vamos a dejar tu app lista en menos de un minuto. Puedes saltarte cualquier paso.</p>
+    <label class="field small" for="obIng">¿Cuánto ingresas al mes? (nómina, aproximado)<input id="obIng" inputmode="decimal" placeholder="Ej. 1.600 €"></label>
+    <label class="field small" for="obDia">¿Qué día cobras?<input id="obDia" inputmode="numeric" placeholder="Ej. 1" value="1"></label>
+    <div class="btns"><button class="btn" id="skip">Saltar</button><button class="btn primary" id="ok">Siguiente</button></div>`);
+    sheet.querySelector("#skip").onclick=()=>{finishOnboard();closeSheet()};
+    sheet.querySelector("#ok").onclick=()=>{const v=num(sheet.querySelector("#obIng").value),dia=Math.max(1,Math.min(31,parseInt(sheet.querySelector("#obDia").value)||1));
+      if(v>0){saveFijo({id:uid("x"),tipo:"ingreso",importe:money2(v),cat:catsI()[0].id,nota:"Nómina",dia,metodo:"Transferencia",activo:true,omitidos:[],desde:monthKey(new Date())});d.ing=v}
+      onboardStep(1,d)};return}
+  if(n===1){const sug=d.ing?Math.round(d.ing*0.8/10)*10:"";
+    openSheet(`<h2>Tu presupuesto mensual</h2>${dots}<p class="small">Lo máximo que quieres gastar cada mes. ${d.ing?`Te proponemos el 80 % de tus ingresos para ahorrar al menos un 20 %.`:""}</p>
+    <input class="amount-in" id="obPres" inputmode="decimal" placeholder="0 €" value="${sug}">
+    <div class="btns" style="margin-top:14px"><button class="btn" id="skip">Saltar</button><button class="btn primary" id="ok">Siguiente</button></div>`);
+    const go=save=>{if(save){const v=num(sheet.querySelector("#obPres").value);if(v>0){state.aj.presupuesto=money2(v);d.pres=v}}onboardStep(2,d)};
+    sheet.querySelector("#skip").onclick=()=>go(false);sheet.querySelector("#ok").onclick=()=>go(true);return}
+  if(n===2){const base=d.pres||d.ing||0,obj=base?Math.round(base*3/100)*100:"";
+    openSheet(`<h2>Tu colchón de emergencia</h2>${dots}<p class="small">Lo recomendable es tener ahorrados de 3 a 6 meses de gastos para imprevistos. Lo creamos como meta y lo verás crecer.</p>
+    <div class="two"><label class="field small" for="obObj">Objetivo (€)<input id="obObj" inputmode="decimal" value="${obj}"></label><label class="field small" for="obYa">Ya tengo (€)<input id="obYa" inputmode="decimal" placeholder="0"></label></div>
+    <div class="btns"><button class="btn" id="skip">Saltar</button><button class="btn primary" id="ok">Terminar</button></div>`);
+    const end=save=>{if(save){const o=num(sheet.querySelector("#obObj").value),y=num(sheet.querySelector("#obYa").value)||0;if(o>0)saveMeta({id:uid("m"),nombre:"Colchón de emergencia",i:"shield",objetivo:money2(o),ahorrado:money2(Math.max(0,y)),fecha:"",creado:Date.now()})}
+      finishOnboard();closeSheet();toast("¡Listo! Ya puedes empezar a apuntar tus gastos")};
+    sheet.querySelector("#skip").onclick=()=>end(false);sheet.querySelector("#ok").onclick=()=>end(true)}
+}
+
+/* ================= Bloqueo (PIN / Face ID) ================= */
+const lockKey=()=>`ahorra-lock-${me&&me.uid}`;
+function lockCfg(){try{return JSON.parse(localStorage.getItem(lockKey())||"null")}catch(e){return null}}
+function setLockCfg(c){try{c?localStorage.setItem(lockKey(),JSON.stringify(c)):localStorage.removeItem(lockKey())}catch(e){}}
+async function hashPin(pin){const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(me.uid+":"+pin));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}
+const b64=buf=>btoa(String.fromCharCode(...new Uint8Array(buf))),unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function bioAvailable(){try{return !!(window.PublicKeyCredential&&await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable())}catch(e){return false}}
+async function bioRegister(){const cred=await navigator.credentials.create({publicKey:{challenge:crypto.getRandomValues(new Uint8Array(32)),rp:{name:"Ahorra+",id:location.hostname},
+  user:{id:new TextEncoder().encode(me.uid),name:me.email,displayName:me.displayName||me.email},pubKeyCredParams:[{type:"public-key",alg:-7},{type:"public-key",alg:-257}],
+  authenticatorSelection:{authenticatorAttachment:"platform",userVerification:"required",residentKey:"discouraged"},timeout:60000}});return b64(cred.rawId)}
+async function bioCheck(id){await navigator.credentials.get({publicKey:{challenge:crypto.getRandomValues(new Uint8Array(32)),allowCredentials:[{type:"public-key",id:unb64(id)}],userVerification:"required",timeout:60000}});return true}
+let lockedAt=0,isLocked=false;
+function showLock(){const c=lockCfg();if(!c||isLocked)return;isLocked=true;
+  const L=document.getElementById("lock");let pin="";L.hidden=false;
+  const draw=(msg="")=>{L.innerHTML=`<div class="lk"><img src="logo.png" alt="" class="lk-logo"><div class="lk-t">Introduce tu código</div>
+    <div class="lk-dots">${[0,1,2,3].map(i=>`<i class="${i<pin.length?"on":""}"></i>`).join("")}</div><div class="lk-msg">${esc(msg)}</div>
+    <div class="lk-pad">${[1,2,3,4,5,6,7,8,9].map(n=>`<button data-n="${n}">${n}</button>`).join("")}<button data-bio aria-label="Face ID" ${c.bio?"":"style=\"visibility:hidden\""}>${svg("faceid")}</button><button data-n="0">0</button><button data-del aria-label="Borrar">${svg("chevL")}</button></div>
+    <button class="link lk-forgot">¿Has olvidado el código?</button></div>`;
+    L.querySelectorAll("[data-n]").forEach(b=>b.onclick=()=>{if(pin.length<4){pin+=b.dataset.n;draw();if(pin.length===4)check()}});
+    L.querySelector("[data-del]").onclick=()=>{pin=pin.slice(0,-1);draw()};
+    const bb=L.querySelector("[data-bio]");if(c.bio)bb.onclick=async()=>{try{await bioCheck(c.bio);unlock()}catch(e){draw("No se ha podido verificar. Usa tu código.")}};
+    L.querySelector(".lk-forgot").onclick=()=>{setLockCfg(null);isLocked=false;L.hidden=true;_auth.signOut();toast("Vuelve a entrar con tu email y contraseña")};};
+  const check=async()=>{const h=await hashPin(pin);if(h===c.pin)unlock();else{pin="";draw("Código incorrecto");L.querySelector(".lk-dots").classList.add("shake")}};
+  const unlock=()=>{isLocked=false;L.hidden=true;L.innerHTML=""};
+  draw();
+}
+document.addEventListener("visibilitychange",()=>{if(document.hidden)lockedAt=Date.now();else if(me&&lockCfg()&&Date.now()-lockedAt>60000&&lockedAt)showLock()});
+async function openLockSettings(){const c=lockCfg(),bio=await bioAvailable();
+  openSheet(`<h2>Bloqueo de la app</h2>
+    <p class="small">Pide un código de 4 cifras${bio?" o Face ID / huella":""} al abrir la app o al volver a ella tras más de un minuto. Se configura en cada dispositivo.</p>
+    ${c?`<div class="hint">${svg("check")}<span>El bloqueo está <b>activado</b>${c.bio?" con Face ID / huella":""}.</span></div>
+      ${bio&&!c.bio?`<button class="btn" id="addBio" style="width:100%;margin-bottom:8px">${svg("faceid")}Activar Face ID / huella</button>`:""}
+      <div class="btns"><button class="btn" id="chg">Cambiar código</button><button class="btn danger" id="off">Desactivar</button></div>`
+    :`<button class="btn primary" id="on" style="width:100%">${svg("shield")}Activar bloqueo</button>`}<div class="note" id="err"></div>`);
+  const err=sheet.querySelector("#err");
+  const setPin=async()=>{openSheet(`<h2>Elige un código</h2><label class="field small" for="p1">Código de 4 cifras<input id="p1" type="password" inputmode="numeric" maxlength="4" autocomplete="off"></label>
+      <label class="field small" for="p2">Repite el código<input id="p2" type="password" inputmode="numeric" maxlength="4" autocomplete="off"></label><div class="note" id="err"></div>
+      <div class="btns"><button class="btn" data-close>Cancelar</button><button class="btn primary" id="ok">Guardar</button></div>`);
+    sheet.querySelector("#ok").onclick=async()=>{const a=sheet.querySelector("#p1").value,b=sheet.querySelector("#p2").value,e=sheet.querySelector("#err");
+      if(!/^\d{4}$/.test(a)){e.textContent="El código debe tener 4 números.";return}if(a!==b){e.textContent="Los códigos no coinciden.";return}
+      const old=lockCfg()||{};setLockCfg({pin:await hashPin(a),bio:old.bio||null});closeSheet();toast("Bloqueo activado");if(bio&&!old.bio)setTimeout(openLockSettings,300)}};
+  const on=sheet.querySelector("#on");if(on)on.onclick=setPin;
+  const chg=sheet.querySelector("#chg");if(chg)chg.onclick=setPin;
+  const off=sheet.querySelector("#off");if(off)confirmBtn(off,()=>{setLockCfg(null);closeSheet();toast("Bloqueo desactivado")});
+  const ab=sheet.querySelector("#addBio");if(ab)ab.onclick=async()=>{try{const id=await bioRegister();setLockCfg({...lockCfg(),bio:id});closeSheet();toast("Face ID / huella activado")}catch(e){err.textContent="No se ha podido activar. Inténtalo de nuevo."}};
+}
 
 /* ================= Grupos (gastos compartidos) ================= */
 let groups={},curGroup=null,gExp={},gUnsub=null,fdbRef=null;
@@ -411,7 +527,7 @@ function countUp(root){
       n.innerHTML=`${v<-0.004?"−":v>0.004?"+":""}${amtHTML(Math.abs(v))}`;if(p<1)requestAnimationFrame(step)};requestAnimationFrame(step)});
 }
 function render(){
-  const ml=cur.toLocaleDateString("es-ES",{month:"long",year:"numeric"});document.getElementById("month").textContent=ml.charAt(0).toUpperCase()+ml.slice(1);
+  const ml=cur.toLocaleDateString("es-ES",{month:innerWidth<440?"short":"long",year:"numeric"}).replace(".","").replace(" de "," ");document.getElementById("month").textContent=ml.charAt(0).toUpperCase()+ml.slice(1);
   document.getElementById("monthnav").hidden=!(view==="inicio"||view==="analisis");
   document.getElementById("title").textContent=({inicio:"Resumen",analisis:"Análisis",buscar:"Movimientos",inversion:"Inversión",mas:"Ajustes",grupos:"Grupos",grupo:(groups[curGroup]&&groups[curGroup].nombre)||"Grupo"})[view];
   document.getElementById("add").hidden=view==="mas"||view==="inversion"||view==="grupos"||view==="grupo";
@@ -479,6 +595,7 @@ function vInicio(){
     </div>
     ${budget}
   </section>
+  ${(()=>{const ins=computeInsights();return ins.length?`<div class="card insight-mini" data-act="analisisgo">${icoHTML({i:ins[0].ic,c:ins[0].c})}<div><div class="lbl">Resumen inteligente</div><div style="font-weight:600;margin-top:2px">${ins[0].t}</div></div><span class="chev">${svg("chevR")}</span></div>`:""})()}
   <div class="quick">
     <button data-act="nuevogasto"><span class="qi">${svg("arrowUp")}</span>Gasto</button>
     <button data-act="nuevoingreso"><span class="qi">${svg("arrowDown")}</span>Ingreso</button>
@@ -539,7 +656,7 @@ function vAnalisis(){
   const yG=sum(gastos(ya)),yI=sum(ingresos(ya));
   const mesesConDatos=new Set(ya.map(m=>m.fecha.slice(0,7))).size||1;
 
-  return `${catsCard}
+  return `${insightsCard()}${catsCard}
   <div class="card"><h3 style="margin-bottom:10px">Últimos 6 meses</h3>${chart}
     <div class="legend"><span><i style="background:var(--pos)"></i>Ingresos</span><span><i style="background:var(--ink);opacity:.9"></i>Gastos</span>${pres?`<span><i style="background:var(--warn)"></i>Presupuesto</span>`:""}</div></div>
   <div class="stats">
@@ -582,6 +699,7 @@ function vMas(){
   return `
   <div class="card"><h3 style="margin-bottom:10px">Cuenta</h3>
     <div class="row" style="margin-bottom:6px"><div style="min-width:0"><div style="font-weight:600">${esc(me&&me.displayName||"Sin nombre")}</div><div class="small" style="overflow:hidden;text-overflow:ellipsis">${esc(me&&me.email||"")}</div></div><button class="btn sm" data-act="salir">Cerrar sesión</button></div>
+    <div class="menu-item" data-act="bloqueo">${icoHTML({i:"faceid",c:""})}<div><div style="font-weight:600">Bloqueo con Face ID o código</div><div class="small">${lockCfg()?"Activado":"Desactivado"}</div></div><span class="chev">${svg("chevR")}</span></div>
     <div class="menu-item" data-act="nombre">${icoHTML({i:"tag",c:""})}<div><div style="font-weight:600">Cambiar nombre</div></div><span class="chev">${svg("chevR")}</span></div>
     <div class="menu-item" data-act="clave">${icoHTML({i:"shield",c:""})}<div><div style="font-weight:600">Cambiar contraseña</div><div class="small">Te enviamos un email para hacerlo</div></div><span class="chev">${svg("chevR")}</span></div>
     <div class="menu-item" data-act="privacidad">${icoHTML({i:"book",c:""})}<div><div style="font-weight:600">Privacidad y condiciones</div></div><span class="chev">${svg("chevR")}</span></div>
@@ -733,7 +851,7 @@ function wire(el){
   el.querySelectorAll("[data-qcat]").forEach(b=>b.onclick=()=>{q.cat=b.dataset.qcat;render()});
   el.querySelectorAll("[data-buscarcat]").forEach(b=>b.onclick=()=>{q={texto:"",cat:b.dataset.buscarcat,tipo:"gasto"};setView("buscar")});
   const qt=el.querySelector("#qtext");if(qt)qt.oninput=()=>{q.texto=qt.value;render()};
-  el.querySelectorAll("[data-act]").forEach(b=>b.onclick=()=>({presupuesto:openBudget,limites:openLimits,categorias:openCats,exportar:openExport,importar:openImport,grupos:()=>setView("grupos"),nuevogrupo:openNuevoGrupo,unirgrupo:openUnir,gastogrupo:()=>openGastoGrupo(),invitar:invitarGrupo,salirgrupo:salirGrupo,volvergrupos:()=>setView("grupos"),nuevogasto:()=>openMov(null,"gasto"),nuevoingreso:()=>openMov(null,"ingreso"),informe:openReport,nombre:openNombre,clave:sendReset,privacidad:()=>{location.href="privacidad.html"},borrar:openBorrar,salir:()=>{if(confirmSalir()){_auth.signOut()}},
+  el.querySelectorAll("[data-act]").forEach(b=>b.onclick=()=>({presupuesto:openBudget,limites:openLimits,categorias:openCats,exportar:openExport,importar:openImport,analisisgo:()=>setView("analisis"),bloqueo:openLockSettings,grupos:()=>setView("grupos"),nuevogrupo:openNuevoGrupo,unirgrupo:openUnir,gastogrupo:()=>openGastoGrupo(),invitar:invitarGrupo,salirgrupo:salirGrupo,volvergrupos:()=>setView("grupos"),nuevogasto:()=>openMov(null,"gasto"),nuevoingreso:()=>openMov(null,"ingreso"),informe:openReport,nombre:openNombre,clave:sendReset,privacidad:()=>{location.href="privacidad.html"},borrar:openBorrar,salir:()=>{if(confirmSalir()){_auth.signOut()}},
     nuevofijo:()=>openFijo(),nuevameta:()=>openMeta(),metas:()=>{setView("mas");setTimeout(()=>document.getElementById("metas")?.scrollIntoView({behavior:"smooth"}),50)}})[b.dataset.act]());
 }
 let salirT=0;function confirmSalir(){const b=document.querySelector('[data-act="salir"]');if(Date.now()-salirT<4000)return true;salirT=Date.now();if(b)b.textContent="¿Seguro? Pulsa otra vez";return false}
@@ -983,6 +1101,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape")closeSheet()});
 document.addEventListener("visibilitychange",()=>{if(!document.hidden){generarFijos();render()}});
 
 document.getElementById("bell").onclick=openAlerts;
+document.getElementById("eye").onclick=toggleHide;applyHide();
 window.addEventListener("afterprint",()=>document.body.classList.remove("printing"));
 initStore();
 if("serviceWorker" in navigator&&location.protocol==="https:")navigator.serviceWorker.register("sw.js").catch(()=>{});
