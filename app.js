@@ -391,6 +391,7 @@ function vMas(){
     <div class="menu-item" data-act="nombre">${icoHTML({i:"tag",c:""})}<div><div style="font-weight:600">Cambiar nombre</div></div><span class="chev">${svg("chevR")}</span></div>
     <div class="menu-item" data-act="clave">${icoHTML({i:"shield",c:""})}<div><div style="font-weight:600">Cambiar contraseña</div><div class="small">Te enviamos un email para hacerlo</div></div><span class="chev">${svg("chevR")}</span></div>
     <div class="menu-item" data-act="privacidad">${icoHTML({i:"book",c:""})}<div><div style="font-weight:600">Privacidad y condiciones</div></div><span class="chev">${svg("chevR")}</span></div>
+    <a class="menu-item" href="mailto:soporte.ahorra@gmail.com" style="color:inherit;text-decoration:none">${icoHTML({i:"handshake",c:""})}<div><div style="font-weight:600">Contacto y soporte</div><div class="small">soporte.ahorra@gmail.com</div></div><span class="chev">${svg("chevR")}</span></a>
     <div class="menu-item" data-act="borrar">${icoHTML({i:"alert",c:"#b42318"})}<div><div style="font-weight:600;color:var(--neg)">Borrar mi cuenta</div><div class="small">Elimina tu cuenta y todos tus datos</div></div><span class="chev">${svg("chevR")}</span></div>
   </div>
   <div class="card">
