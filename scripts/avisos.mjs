@@ -43,6 +43,7 @@ for (const pd of pushDocs) {
   const movs = movS.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => (m.fecha || "").startsWith(mk));
   const gastos = movs.filter(m => m.tipo !== "ingreso");
   const G = sum(gastos);
+  console.log(`Usuario ${user.id.slice(0,5)}…: tokens=${tokens.length}, fijos=${fijosS.size}, dias=[${fijosS.docs.map(d=>d.data().dia).join(",")}], mañana=${tomorrow}`);
 
   // 1) Pagos y cobros de mañana
   if (prefs.fijos && tomorrow) {
@@ -87,7 +88,8 @@ for (const pd of pushDocs) {
   for (const [i, n] of msgs.slice(0, 3).entries()) {
     if (DRY) { console.log(user.id, n); continue; }
     const res = await fcm.sendEachForMulticast({ tokens, webpush: { notification: { title: n.title, body: n.body, icon: APP_URL + "icon-192.png" }, fcmOptions: { link: APP_URL } }, data: { tag: `ahorra-${i}`, url: APP_URL } });
-    res.responses.forEach((r, k) => { if (!r.success && /registration-token-not-registered|invalid-argument|invalid-registration-token/.test(r.error?.code || "")) bad.add(tokens[k]); });
+    console.log(`Aviso "${n.title}": ok=${res.successCount}, fallos=${res.failureCount}`);
+    res.responses.forEach((r, k) => { if (!r.success) console.log("  error:", r.error?.code, r.error?.message); if (!r.success && /registration-token-not-registered|invalid-argument|invalid-registration-token/.test(r.error?.code || "")) bad.add(tokens[k]); });
     sent += res.successCount;
   }
   const upd = { sent: { ...flags, ...newFlags }, lastRun: Date.now() };
