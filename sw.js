@@ -1,4 +1,4 @@
-const V="ahorra-v10";
+const V="ahorra-v11";
 const SHELL=["./","index.html","privacidad.html","app.js","icons.js","config.js","manifest.json","icon-192.png","apple-touch-icon.png","logo.png"];
 self.addEventListener("install",e=>{e.waitUntil(caches.open(V).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()))});
 self.addEventListener("activate",e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==V).map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});
@@ -12,3 +12,12 @@ self.addEventListener("fetch",e=>{
     e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{const c=res.clone();caches.open(V).then(x=>x.put(e.request,c));return res})));
   }
 });
+
+// Notificaciones push (enviadas por FCM)
+self.addEventListener("push",e=>{
+  let p={};try{p=e.data?e.data.json():{}}catch(err){p={notification:{title:"Ahorra+",body:e.data&&e.data.text()}}}
+  const n=p.notification||p.data||{};
+  e.waitUntil(self.registration.showNotification(n.title||"Ahorra+",{body:n.body||"",icon:"icon-192.png",badge:"icon-192.png",tag:(p.data&&p.data.tag)||undefined,data:{url:(p.data&&p.data.url)||(p.fcmOptions&&p.fcmOptions.link)||"./"}}));
+});
+self.addEventListener("notificationclick",e=>{e.notification.close();const url=(e.notification.data&&e.notification.data.url)||"./";
+  e.waitUntil(clients.matchAll({type:"window",includeUncontrolled:true}).then(cs=>{for(const c of cs){if("focus" in c)return c.focus()}return clients.openWindow(url)}))});

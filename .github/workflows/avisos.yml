@@ -1,0 +1,24 @@
+name: Avisos diarios de Ahorra+
+
+on:
+  schedule:
+    - cron: "17 7 * * *"   # todos los días ~8:17 (invierno) / 9:17 (verano) hora de Madrid
+  workflow_dispatch: {}    # permite lanzarlo a mano desde la pestaña Actions
+
+jobs:
+  avisos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Instalar dependencias
+        working-directory: scripts
+        run: npm install --no-audit --no-fund
+      - name: Enviar avisos
+        working-directory: scripts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node avisos.mjs

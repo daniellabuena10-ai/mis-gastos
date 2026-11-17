@@ -7,3 +7,6 @@ window.FIREBASE_CONFIG = {
   messagingSenderId: "265848213997",
   appId: "1:265848213997:web:6ca27ec3525d859c8a17e4"
 };
+
+// Clave pública de notificaciones web (Cloud Messaging → Web Push certificates)
+window.VAPID_KEY = "";

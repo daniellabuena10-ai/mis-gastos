@@ -55,6 +55,7 @@ async function initStore(){
   const auth=firebase.auth(),fdb=firebase.firestore();auth.languageCode="es";
   try{await fdb.enablePersistence({synchronizeTabs:true})}catch(e){}
   window._auth=auth;
+  try{if(firebase.messaging&&"serviceWorker" in navigator)firebase.messaging().onMessage(p=>{const n=p.notification||p.data||{};toast(`${n.title||"Ahorra+"}: ${n.body||""}`)})}catch(e){}
   auth.onAuthStateChanged(u=>{
     document.getElementById("splash")?.remove();
     unsubs.forEach(f=>f());unsubs=[];resetState();me=u;
@@ -274,6 +275,43 @@ async function openLockSettings(){const c=lockCfg(),bio=await bioAvailable();
   const chg=sheet.querySelector("#chg");if(chg)chg.onclick=setPin;
   const off=sheet.querySelector("#off");if(off)confirmBtn(off,()=>{setLockCfg(null);closeSheet();toast("Bloqueo desactivado")});
   const ab=sheet.querySelector("#addBio");if(ab)ab.onclick=async()=>{try{const id=await bioRegister();setLockCfg({...lockCfg(),bio:id});closeSheet();toast("Face ID / huella activado")}catch(e){err.textContent="No se ha podido activar. Inténtalo de nuevo."}};
+}
+
+
+/* ================= Notificaciones push ================= */
+const pushSupported=()=>"serviceWorker" in navigator&&"PushManager" in window&&"Notification" in window&&window.firebase&&firebase.messaging;
+const isStandalone=()=>matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
+async function enablePush(){
+  if(!window.VAPID_KEY)throw new Error("novapid");
+  if(!pushSupported())throw new Error(/iphone|ipad/i.test(navigator.userAgent)&&!isStandalone()?"ios-browser":"unsupported");
+  const perm=await Notification.requestPermission();if(perm!=="granted")throw new Error("denied");
+  const reg=await navigator.serviceWorker.ready;
+  const token=await firebase.messaging().getToken({vapidKey:VAPID_KEY,serviceWorkerRegistration:reg});
+  if(!token)throw new Error("notoken");
+  await window._base.collection("config").doc("push").set({tokens:firebase.firestore.FieldValue.arrayUnion(token),tz:"Europe/Madrid",updated:Date.now(),
+    prefs:{fijos:true,presupuesto:true,semanal:true}},{merge:true});
+  try{localStorage.setItem("ahorra-push-"+me.uid,token)}catch(e){}
+  return token;
+}
+async function disablePush(){let t=null;try{t=localStorage.getItem("ahorra-push-"+me.uid)}catch(e){}
+  try{if(t)await window._base.collection("config").doc("push").set({tokens:firebase.firestore.FieldValue.arrayRemove(t)},{merge:true});if(pushSupported())await firebase.messaging().deleteToken()}catch(e){}
+  try{localStorage.removeItem("ahorra-push-"+me.uid)}catch(e){}}
+const pushOn=()=>{try{return !!localStorage.getItem("ahorra-push-"+me.uid)&&Notification.permission==="granted"}catch(e){return false}};
+function openPushSettings(){
+  const on=pushOn();
+  openSheet(`<h2>Notificaciones</h2>
+    <p class="small">Te avisamos en el móvil aunque no tengas la app abierta:</p>
+    <div class="tip">${icoHTML({i:"calendar",c:"#7dd3fc"})}<div><b>Pagos y cobros de mañana</b><div class="small">Alquiler, suscripciones, nómina…</div></div></div>
+    <div class="tip">${icoHTML({i:"gauge",c:"#f3c969"})}<div><b>Presupuesto y límites</b><div class="small">Al llegar al 80 % y al superarlo.</div></div></div>
+    <div class="tip">${icoHTML({i:"receipt",c:"#2ee59d"})}<div><b>Resumen de la semana</b><div class="small">Cada lunes, cuánto gastaste.</div></div></div>
+    ${/iphone|ipad/i.test(navigator.userAgent)&&!isStandalone()?`<div class="hint">${svg("alert")}<span>En iPhone las notificaciones solo funcionan con la app instalada en la pantalla de inicio. Ábrela desde su icono.</span></div>`:""}
+    <div class="note" id="err"></div>
+    <div class="btns">${on?`<button class="btn danger" id="off">Desactivar</button>`:`<button class="btn" data-close>Ahora no</button><button class="btn primary" id="on">${svg("bell")}Activar</button>`}</div>`);
+  const err=sheet.querySelector("#err");
+  const b=sheet.querySelector("#on");if(b)b.onclick=async()=>{b.disabled=true;b.textContent="Activando…";
+    try{await enablePush();closeSheet();toast("Notificaciones activadas");render()}catch(e){b.disabled=false;b.textContent="Activar";
+      err.textContent={novapid:"Las notificaciones aún no están configuradas en la app.",denied:"Has bloqueado las notificaciones. Actívalas en Ajustes del iPhone → Notificaciones → Ahorra+.","ios-browser":"Abre la app desde el icono de la pantalla de inicio para activarlas.",unsupported:"Este navegador no admite notificaciones."}[e.message]||"No se han podido activar. Inténtalo de nuevo."}};
+  const off=sheet.querySelector("#off");if(off)off.onclick=async()=>{await disablePush();closeSheet();toast("Notificaciones desactivadas");render()};
 }
 
 /* ================= Grupos (gastos compartidos) ================= */
@@ -699,6 +737,7 @@ function vMas(){
   return `
   <div class="card"><h3 style="margin-bottom:10px">Cuenta</h3>
     <div class="row" style="margin-bottom:6px"><div style="min-width:0"><div style="font-weight:600">${esc(me&&me.displayName||"Sin nombre")}</div><div class="small" style="overflow:hidden;text-overflow:ellipsis">${esc(me&&me.email||"")}</div></div><button class="btn sm" data-act="salir">Cerrar sesión</button></div>
+    <div class="menu-item" data-act="notis">${icoHTML({i:"bell",c:""})}<div><div style="font-weight:600">Notificaciones</div><div class="small">${pushOn()?"Activadas":"Desactivadas"}</div></div><span class="chev">${svg("chevR")}</span></div>
     <div class="menu-item" data-act="bloqueo">${icoHTML({i:"faceid",c:""})}<div><div style="font-weight:600">Bloqueo con Face ID o código</div><div class="small">${lockCfg()?"Activado":"Desactivado"}</div></div><span class="chev">${svg("chevR")}</span></div>
     <div class="menu-item" data-act="nombre">${icoHTML({i:"tag",c:""})}<div><div style="font-weight:600">Cambiar nombre</div></div><span class="chev">${svg("chevR")}</span></div>
     <div class="menu-item" data-act="clave">${icoHTML({i:"shield",c:""})}<div><div style="font-weight:600">Cambiar contraseña</div><div class="small">Te enviamos un email para hacerlo</div></div><span class="chev">${svg("chevR")}</span></div>
@@ -851,7 +890,7 @@ function wire(el){
   el.querySelectorAll("[data-qcat]").forEach(b=>b.onclick=()=>{q.cat=b.dataset.qcat;render()});
   el.querySelectorAll("[data-buscarcat]").forEach(b=>b.onclick=()=>{q={texto:"",cat:b.dataset.buscarcat,tipo:"gasto"};setView("buscar")});
   const qt=el.querySelector("#qtext");if(qt)qt.oninput=()=>{q.texto=qt.value;render()};
-  el.querySelectorAll("[data-act]").forEach(b=>b.onclick=()=>({presupuesto:openBudget,limites:openLimits,categorias:openCats,exportar:openExport,importar:openImport,analisisgo:()=>setView("analisis"),bloqueo:openLockSettings,grupos:()=>setView("grupos"),nuevogrupo:openNuevoGrupo,unirgrupo:openUnir,gastogrupo:()=>openGastoGrupo(),invitar:invitarGrupo,salirgrupo:salirGrupo,volvergrupos:()=>setView("grupos"),nuevogasto:()=>openMov(null,"gasto"),nuevoingreso:()=>openMov(null,"ingreso"),informe:openReport,nombre:openNombre,clave:sendReset,privacidad:()=>{location.href="privacidad.html"},borrar:openBorrar,salir:()=>{if(confirmSalir()){_auth.signOut()}},
+  el.querySelectorAll("[data-act]").forEach(b=>b.onclick=()=>({presupuesto:openBudget,limites:openLimits,categorias:openCats,exportar:openExport,importar:openImport,notis:openPushSettings,analisisgo:()=>setView("analisis"),bloqueo:openLockSettings,grupos:()=>setView("grupos"),nuevogrupo:openNuevoGrupo,unirgrupo:openUnir,gastogrupo:()=>openGastoGrupo(),invitar:invitarGrupo,salirgrupo:salirGrupo,volvergrupos:()=>setView("grupos"),nuevogasto:()=>openMov(null,"gasto"),nuevoingreso:()=>openMov(null,"ingreso"),informe:openReport,nombre:openNombre,clave:sendReset,privacidad:()=>{location.href="privacidad.html"},borrar:openBorrar,salir:()=>{if(confirmSalir()){_auth.signOut()}},
     nuevofijo:()=>openFijo(),nuevameta:()=>openMeta(),metas:()=>{setView("mas");setTimeout(()=>document.getElementById("metas")?.scrollIntoView({behavior:"smooth"}),50)}})[b.dataset.act]());
 }
 let salirT=0;function confirmSalir(){const b=document.querySelector('[data-act="salir"]');if(Date.now()-salirT<4000)return true;salirT=Date.now();if(b)b.textContent="¿Seguro? Pulsa otra vez";return false}
@@ -1101,6 +1140,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape")closeSheet()});
 document.addEventListener("visibilitychange",()=>{if(!document.hidden){generarFijos();render()}});
 
 document.getElementById("bell").onclick=openAlerts;
+try{if(window.firebase&&firebase.messaging&&firebase.apps.length===0){}}catch(e){}
 document.getElementById("eye").onclick=toggleHide;applyHide();
 window.addEventListener("afterprint",()=>document.body.classList.remove("printing"));
 initStore();
