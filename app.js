@@ -58,7 +58,8 @@ async function initStore(){
     document.getElementById("splash")?.remove();
     unsubs.forEach(f=>f());unsubs=[];resetState();me=u;
     if(!u){store=null;showAuth();return}
-    hideAuth();startData(fdb,u);setView("inicio");
+    hideAuth();startData(fdb,u);startGroups(fdb,u);setView("inicio");
+    const hm=location.hash.match(/^#unir-([A-Za-z0-9]{10,40})$/);if(hm){history.replaceState(null,"",location.pathname);setTimeout(()=>joinGroup(hm[1]),600)}
   });
 }
 function startData(fdb,u){
@@ -157,6 +158,118 @@ function openBorrar(){
 }
 
 
+
+
+/* ================= Grupos (gastos compartidos) ================= */
+let groups={},curGroup=null,gExp={},gUnsub=null,fdbRef=null;
+function startGroups(fdb,u){fdbRef=fdb;groups={};
+  unsubs.push(fdb.collection("groups").where("members","array-contains",u.uid).onSnapshot(s=>{const o={};s.docs.forEach(d=>o[d.id]={...d.data(),id:d.id});groups=o;if(view==="grupos"||view==="grupo")render()},()=>{}));
+  unsubs.push(()=>{if(gUnsub){gUnsub();gUnsub=null}});
+}
+const gName=(g,uid)=>uid===me.uid?"Tú":((g.names&&g.names[uid])||"Miembro");
+function gBalances(g,exps){const b={};(g.members||[]).forEach(u=>b[u]=0);
+  for(const e of exps){const imp=+e.importe||0;
+    if(e.tipo==="pago"){b[e.de]=(b[e.de]||0)+imp;b[e.a]=(b[e.a]||0)-imp;continue}
+    const rep=(e.reparto&&e.reparto.length?e.reparto:g.members)||[];const parte=imp/(rep.length||1);
+    b[e.pagador]=(b[e.pagador]||0)+imp;rep.forEach(u=>b[u]=(b[u]||0)-parte)}
+  return b}
+function gSettle(b){const deb=[],cre=[];Object.entries(b).forEach(([u,v])=>{const r=Math.round(v*100)/100;if(r<-0.009)deb.push([u,-r]);else if(r>0.009)cre.push([u,r])});
+  deb.sort((a,b)=>b[1]-a[1]);cre.sort((a,b)=>b[1]-a[1]);const out=[];let i=0,j=0;
+  while(i<deb.length&&j<cre.length){const x=Math.min(deb[i][1],cre[j][1]);out.push({de:deb[i][0],a:cre[j][0],imp:Math.round(x*100)/100});deb[i][1]-=x;cre[j][1]-=x;if(deb[i][1]<0.01)i++;if(cre[j][1]<0.01)j++}
+  return out}
+function vGrupos(){
+  const list=Object.values(groups).sort((a,b)=>(b.creado||0)-(a.creado||0));
+  return `<div class="card"><div class="row"><div><h3>Gastos compartidos</h3><div class="small" style="margin-top:4px">Viajes, piso, cenas… apunta lo que paga cada uno y Ahorra+ calcula quién debe a quién.</div></div></div>
+    <div class="btns" style="margin-top:14px"><button class="btn" data-act="unirgrupo">${svg("handshake")}Unirme</button><button class="btn primary" data-act="nuevogrupo">${svg("plus")}Crear grupo</button></div></div>
+  ${list.length?`<div class="card" style="padding:4px 16px">${list.map(g=>`<div class="menu-item" data-grupo="${esc(g.id)}">${icoHTML({i:"handshake",c:"#2ee59d"})}<div style="min-width:0"><div style="font-weight:700">${esc(g.nombre)}</div><div class="small">${(g.members||[]).length} miembro${(g.members||[]).length===1?"":"s"}</div></div><span class="chev">${svg("chevR")}</span></div>`).join("")}</div>`
+  :`<div class="card empty">${icoHTML({i:"handshake",c:"#2ee59d"})}<span><b>Aún no tienes grupos.</b><br>Crea uno e invita a tus amigos con un enlace.</span></div>`}`;
+}
+function openGrupo(id){curGroup=id;gExp={};if(gUnsub)gUnsub();
+  gUnsub=fdbRef.collection("groups").doc(id).collection("gastos").onSnapshot(s=>{const o={};s.docs.forEach(d=>o[d.id]={...d.data(),id:d.id});gExp=o;if(view==="grupo")render()},()=>{toast("No tienes acceso a este grupo")});
+  setView("grupo")}
+function vGrupo(){
+  const g=groups[curGroup];if(!g)return `<div class="card empty">Cargando grupo…</div>`;
+  const exps=Object.values(gExp).sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||"")||(b.creado||0)-(a.creado||0));
+  const b=gBalances(g,exps),mine=b[me.uid]||0,sett=gSettle(b),total=sum(exps.filter(e=>e.tipo!=="pago"));
+  return `<button class="link" data-act="volvergrupos" style="margin-bottom:8px">${svg("chevL")}Todos los grupos</button>
+  <section class="hero"><div class="hero-top"><div class="brandchip">${svg("handshake")}${esc(g.nombre)}</div><button class="link" data-act="invitar">${svg("plus")}Invitar</button></div>
+    <div class="lbl">${Math.abs(mine)<0.01?"Estás al día":mine>0?"Te deben":"Debes"}</div>
+    <div class="big">${amtHTML(Math.abs(mine))}</div>
+    <div class="insight">Gasto total del grupo: <b>${fmt0(total)}</b> · ${(g.members||[]).length} miembros</div>
+    <div class="flows" style="grid-template-columns:1fr">${(g.members||[]).map(u=>`<div class="flow" style="justify-content:space-between"><span style="font-weight:600">${esc(gName(g,u))}</span><span class="v" style="color:${(b[u]||0)>0.009?"#7dffc8":(b[u]||0)<-0.009?"#ffb3b3":"inherit"}">${(b[u]||0)>0.009?"+":(b[u]||0)<-0.009?"−":""}${fmt(Math.abs(b[u]||0))}</span></div>`).join("")}</div>
+  </section>
+  <div class="card"><h3 style="margin-bottom:8px">Saldar cuentas</h3>${sett.length?sett.map((s,k)=>`<div class="tip">${icoHTML({i:"coins",c:"#f3c969"})}<div class="row"><span><b>${esc(gName(g,s.de))}</b> ${s.de===me.uid?"debes":"debe"} <b>${fmt(s.imp)}</b> a <b>${s.a===me.uid?"ti":esc(gName(g,s.a))}</b></span><button class="btn sm" data-saldar="${k}">Pagado</button></div></div>`).join(""):`<div class="small">Todo saldado. Nadie debe nada.</div>`}</div>
+  <div class="btns" style="margin-bottom:14px"><button class="btn primary" data-act="gastogrupo">${svg("plus")}Añadir gasto del grupo</button></div>
+  ${exps.length?`<div class="card" style="padding:2px 16px">${exps.map(e=>e.tipo==="pago"?`<div class="item" data-gexp="${esc(e.id)}">${icoHTML({i:"check",c:"#2ee59d"})}<div style="min-width:0"><div class="t">${esc(gName(g,e.de))} pagó a ${esc(gName(g,e.a))}</div><div class="small">${e.fecha.split("-").reverse().join("/")} · Liquidación</div></div><div class="amt">${amtHTML(e.importe)}</div></div>`
+    :`<div class="item" data-gexp="${esc(e.id)}">${icoHTML({i:"receipt",c:"#a5b4fc"})}<div style="min-width:0"><div class="t">${esc(e.desc)}</div><div class="small">Pagó ${esc(gName(g,e.pagador))} · ${e.fecha.split("-").reverse().join("/")} · entre ${(e.reparto||g.members).length}</div></div><div class="amt">${amtHTML(e.importe)}</div></div>`).join("")}</div>`:`<div class="card empty">${icoHTML({i:"receipt",c:"#a5b4fc"})}<span>Aún no hay gastos en este grupo.</span></div>`}
+  <div style="text-align:center;margin:8px 0 20px"><button class="link" data-act="salirgrupo" style="color:var(--neg)">Salir del grupo</button></div>`;
+}
+function wireGrupos(el){
+  el.querySelectorAll("[data-grupo]").forEach(x=>x.onclick=()=>openGrupo(x.dataset.grupo));
+  el.querySelectorAll("[data-gexp]").forEach(x=>x.onclick=()=>openGastoGrupo(gExp[x.dataset.gexp]));
+  const g=groups[curGroup];if(view==="grupo"&&g){const sett=gSettle(gBalances(g,Object.values(gExp)));
+    el.querySelectorAll("[data-saldar]").forEach(x=>x.onclick=()=>{const s=sett[+x.dataset.saldar];if(!s)return;
+      fdbRef.collection("groups").doc(curGroup).collection("gastos").add({tipo:"pago",de:s.de,a:s.a,importe:s.imp,fecha:todayStr(),creado:Date.now(),por:me.uid}).then(()=>toast("Pago registrado")).catch(()=>toast("No se ha podido guardar"))})}
+}
+function openNuevoGrupo(){
+  openSheet(`<h2>Crear grupo</h2><label class="field small" for="gNom">Nombre del grupo<input id="gNom" maxlength="40" placeholder="Ej. Viaje a Lisboa, Piso, Cenas"></label>
+    <div class="note" id="err"></div><div class="btns"><button class="btn" data-close>Cancelar</button><button class="btn primary" id="ok">Crear</button></div>`);
+  sheet.querySelector("#ok").onclick=async function(){const n=sheet.querySelector("#gNom").value.trim();if(!n){sheet.querySelector("#err").textContent="Ponle un nombre al grupo.";return}
+    this.disabled=true;try{const ref=await fdbRef.collection("groups").add({nombre:n.slice(0,40),members:[me.uid],names:{[me.uid]:me.displayName||me.email.split("@")[0]},owner:me.uid,creado:Date.now()});
+      closeSheet();openGrupo(ref.id);setTimeout(invitarGrupo,400)}catch(e){this.disabled=false;sheet.querySelector("#err").textContent=e.code==="permission-denied"?"Falta activar los grupos en Firebase (reglas).":"No se ha podido crear. Revisa tu conexión."}};
+}
+const inviteLink=id=>`${location.origin}${location.pathname}#unir-${id}`;
+function invitarGrupo(){const g=groups[curGroup];if(!g)return;const link=inviteLink(g.id);
+  openSheet(`<h2>Invitar a ${esc(g.nombre)}</h2><p class="small">Envía este enlace a tus amigos. Al abrirlo y entrar en Ahorra+, se unirán al grupo.</p>
+    <div class="input" style="word-break:break-all;font-size:13px;margin-bottom:12px">${esc(link)}</div>
+    <div class="small" style="margin-bottom:14px">O que usen <b>Unirme</b> con este código: <b style="font-family:var(--mono);color:var(--ink)">${esc(g.id)}</b></div>
+    <div class="btns"><button class="btn" id="cp">Copiar enlace</button>${navigator.share?`<button class="btn primary" id="sh">Compartir</button>`:""}</div>`);
+  sheet.querySelector("#cp").onclick=async function(){try{await navigator.clipboard.writeText(link);this.textContent="Copiado"}catch(e){this.textContent="Mantén pulsado el enlace para copiar"}};
+  const sh=sheet.querySelector("#sh");if(sh)sh.onclick=()=>navigator.share({title:"Ahorra+",text:`Únete a «${g.nombre}» en Ahorra+ para repartir gastos`,url:link}).catch(()=>{});
+}
+function openUnir(){
+  openSheet(`<h2>Unirme a un grupo</h2><label class="field small" for="gCod">Código o enlace de invitación<input id="gCod" autocomplete="off" placeholder="Pega aquí el enlace o el código"></label>
+    <div class="note" id="err"></div><div class="btns"><button class="btn" data-close>Cancelar</button><button class="btn primary" id="ok">Unirme</button></div>`);
+  sheet.querySelector("#ok").onclick=()=>{const v=sheet.querySelector("#gCod").value.trim(),m=v.match(/([A-Za-z0-9]{15,40})\s*$/);if(!m){sheet.querySelector("#err").textContent="No reconozco ese código.";return}closeSheet();joinGroup(m[1])};
+}
+async function joinGroup(id){
+  try{const ref=fdbRef.collection("groups").doc(id),s=await ref.get();if(!s.exists){toast("Ese grupo no existe");return}
+    const g=s.data();if(!(g.members||[]).includes(me.uid))await ref.update({members:firebase.firestore.FieldValue.arrayUnion(me.uid),[`names.${me.uid}`]:me.displayName||me.email.split("@")[0]});
+    toast(`Te has unido a «${g.nombre}»`);openGrupo(id)}catch(e){toast(e.code==="permission-denied"?"No se ha podido unir: falta activar los grupos en Firebase.":"No se ha podido unir. Revisa el enlace o tu conexión.")}
+}
+function salirGrupo(){const g=groups[curGroup];if(!g)return;
+  openSheet(`<h2>Salir de ${esc(g.nombre)}</h2><p class="small">Dejarás de ver este grupo. Los gastos ya apuntados se quedan para el resto.</p>
+    <div class="btns"><button class="btn" data-close>Cancelar</button><button class="btn danger" id="ok">Salir</button></div>`);
+  sheet.querySelector("#ok").onclick=async()=>{try{await fdbRef.collection("groups").doc(g.id).update({members:firebase.firestore.FieldValue.arrayRemove(me.uid)});closeSheet();if(gUnsub){gUnsub();gUnsub=null}setView("grupos");toast("Has salido del grupo")}catch(e){toast("No se ha podido salir. Inténtalo de nuevo.")}};
+}
+function openGastoGrupo(e){
+  const g=groups[curGroup];if(!g)return;if(e&&e.tipo==="pago"){
+    openSheet(`<h2>Liquidación</h2><p>${esc(gName(g,e.de))} pagó ${fmt(e.importe)} a ${esc(gName(g,e.a))} el ${e.fecha.split("-").reverse().join("/")}.</p><div class="btns"><button class="btn danger" id="del">Borrar</button><button class="btn" data-close>Cerrar</button></div>`);
+    confirmBtn(sheet.querySelector("#del"),()=>{fdbRef.collection("groups").doc(g.id).collection("gastos").doc(e.id).delete();closeSheet()});return}
+  const editing=!!e;e=e||{pagador:me.uid,reparto:[...g.members],fecha:todayStr()};
+  openSheet(`<h2>${editing?"Editar gasto del grupo":"Gasto del grupo"}</h2>
+    <input class="amount-in" id="gImp" inputmode="decimal" placeholder="0,00 €" value="${editing?String(e.importe).replace(".",","):""}">
+    <label class="field small" for="gDesc" style="margin-top:12px">Concepto<input id="gDesc" maxlength="60" placeholder="Ej. Cena, gasolina, supermercado" value="${esc(e.desc||"")}"></label>
+    <div class="two"><label class="field small" for="gPag">Pagó<select id="gPag">${g.members.map(u=>`<option value="${esc(u)}" ${u===e.pagador?"selected":""}>${esc(gName(g,u))}</option>`).join("")}</select></label>
+    <label class="field small" for="gFec">Fecha<input type="date" id="gFec" value="${e.fecha}"></label></div>
+    <div class="small" style="font-weight:600;margin-bottom:6px">Dividir a partes iguales entre</div>
+    <div class="filters" style="flex-wrap:wrap">${g.members.map(u=>`<button type="button" class="${(e.reparto||g.members).includes(u)?"on":""}" data-rep="${esc(u)}">${esc(gName(g,u))}</button>`).join("")}</div>
+    ${editing?"":`<label class="check"><input type="checkbox" id="gMine" checked> Apuntar mi parte en mis gastos</label>`}
+    <div class="note" id="err"></div>
+    <div class="btns">${editing?`<button class="btn danger" id="del">Borrar</button>`:`<button class="btn" data-close>Cancelar</button>`}<button class="btn primary" id="ok">Guardar</button></div>`);
+  const rep=new Set(e.reparto||g.members);
+  sheet.querySelectorAll("[data-rep]").forEach(b=>b.onclick=()=>{const u=b.dataset.rep;if(rep.has(u)){if(rep.size>1)rep.delete(u)}else rep.add(u);b.classList.toggle("on",rep.has(u))});
+  const del=sheet.querySelector("#del");if(del)confirmBtn(del,()=>{fdbRef.collection("groups").doc(g.id).collection("gastos").doc(e.id).delete();closeSheet()});
+  sheet.querySelector("#ok").onclick=async()=>{const v=num(sheet.querySelector("#gImp").value),desc=sheet.querySelector("#gDesc").value.trim();
+    if(!(v>0)){sheet.querySelector("#err").textContent="Escribe un importe válido";return}if(!desc){sheet.querySelector("#err").textContent="Escribe un concepto";return}
+    const data={desc:desc.slice(0,60),importe:money2(v),pagador:sheet.querySelector("#gPag").value,reparto:[...rep],fecha:sheet.querySelector("#gFec").value||todayStr(),creado:e.creado||Date.now(),por:e.por||me.uid};
+    const col=fdbRef.collection("groups").doc(g.id).collection("gastos");
+    try{if(editing)await col.doc(e.id).set(data);else await col.add(data)}catch(err){sheet.querySelector("#err").textContent="No se ha podido guardar.";return}
+    const mine=sheet.querySelector("#gMine");
+    if(mine&&mine.checked&&rep.has(me.uid)){const parte=money2(data.importe/rep.size),c=catsG().find(x=>x.id==="ocio")||catsG()[0];
+      saveMov({id:uid("g"),tipo:"gasto",importe:parte,cat:c.id,nota:`${data.desc} (${g.nombre})`.slice(0,80),metodo:"",fecha:data.fecha,creado:Date.now()})}
+    closeSheet();toast("Gasto del grupo guardado")};
+}
 
 /* ================= Tickets ================= */
 function compressImg(file){return new Promise((res,rej)=>{const url=URL.createObjectURL(file),img=new Image();
@@ -300,8 +413,8 @@ function countUp(root){
 function render(){
   const ml=cur.toLocaleDateString("es-ES",{month:"long",year:"numeric"});document.getElementById("month").textContent=ml.charAt(0).toUpperCase()+ml.slice(1);
   document.getElementById("monthnav").hidden=!(view==="inicio"||view==="analisis");
-  document.getElementById("title").textContent={inicio:"Resumen",analisis:"Análisis",buscar:"Movimientos",inversion:"Inversión",mas:"Ajustes"}[view];
-  document.getElementById("add").hidden=view==="mas"||view==="inversion";
+  document.getElementById("title").textContent=({inicio:"Resumen",analisis:"Análisis",buscar:"Movimientos",inversion:"Inversión",mas:"Ajustes",grupos:"Grupos",grupo:(groups[curGroup]&&groups[curGroup].nombre)||"Grupo"})[view];
+  document.getElementById("add").hidden=view==="mas"||view==="inversion"||view==="grupos"||view==="grupo";
   document.getElementById("invWidgets").hidden=view!=="inversion";
   if(view==="inversion")mountInversion();
   const el=document.getElementById("view");
@@ -309,7 +422,7 @@ function render(){
   const keepFocus=(view==="buscar"&&fid==="qtext")||(view==="inversion"&&/^s(Ini|Mes|Anos|Rent)$/.test(fid||""));
   const selStart=keepFocus?document.activeElement.selectionStart:0;
   el.classList.toggle("noanim",lastView===view);lastView=view;
-  el.innerHTML=({inicio:vInicio,analisis:vAnalisis,buscar:vBuscar,inversion:vInversion,mas:vMas})[view]();
+  el.innerHTML=({inicio:vInicio,analisis:vAnalisis,buscar:vBuscar,inversion:vInversion,mas:vMas,grupos:vGrupos,grupo:vGrupo})[view]();
   wire(el);countUp(el);updateBadge();
   if(keepFocus){const i=document.getElementById(fid);i.focus();try{i.setSelectionRange(selStart,selStart)}catch(e){}}
 }
@@ -370,7 +483,7 @@ function vInicio(){
     <button data-act="nuevogasto"><span class="qi">${svg("arrowUp")}</span>Gasto</button>
     <button data-act="nuevoingreso"><span class="qi">${svg("arrowDown")}</span>Ingreso</button>
     <button data-act="informe"><span class="qi">${svg("receipt")}</span>Informe</button>
-    <button data-act="metas"><span class="qi">${svg("target")}</span>Metas</button>
+    <button data-act="grupos"><span class="qi">${svg("handshake")}</span>Grupos</button>
   </div>
     ${metasMini}
     <div class="seg">${[["todo","Todo"],["gasto","Gastos"],["ingreso","Ingresos"]].map(([k,n])=>`<button data-filtro="${k}" class="${filtroInicio===k?"on":""}">${n}</button>`).join("")}</div>
@@ -611,7 +724,7 @@ function wireSim(el){const c=el.querySelector("#simCard");if(!c)return;
 
 /* ================= Interacción ================= */
 function wire(el){
-  wireSim(el);
+  wireSim(el);wireGrupos(el);
   el.querySelectorAll("[data-mov]").forEach(i=>i.onclick=()=>openMov(state.mov[i.dataset.mov]));
   el.querySelectorAll("[data-fijo]").forEach(i=>i.onclick=()=>openFijo(state.fijos[i.dataset.fijo]));
   el.querySelectorAll("[data-meta]").forEach(i=>i.onclick=()=>openMeta(state.metas[i.dataset.meta]));
@@ -620,7 +733,7 @@ function wire(el){
   el.querySelectorAll("[data-qcat]").forEach(b=>b.onclick=()=>{q.cat=b.dataset.qcat;render()});
   el.querySelectorAll("[data-buscarcat]").forEach(b=>b.onclick=()=>{q={texto:"",cat:b.dataset.buscarcat,tipo:"gasto"};setView("buscar")});
   const qt=el.querySelector("#qtext");if(qt)qt.oninput=()=>{q.texto=qt.value;render()};
-  el.querySelectorAll("[data-act]").forEach(b=>b.onclick=()=>({presupuesto:openBudget,limites:openLimits,categorias:openCats,exportar:openExport,importar:openImport,nuevogasto:()=>openMov(null,"gasto"),nuevoingreso:()=>openMov(null,"ingreso"),informe:openReport,nombre:openNombre,clave:sendReset,privacidad:()=>{location.href="privacidad.html"},borrar:openBorrar,salir:()=>{if(confirmSalir()){_auth.signOut()}},
+  el.querySelectorAll("[data-act]").forEach(b=>b.onclick=()=>({presupuesto:openBudget,limites:openLimits,categorias:openCats,exportar:openExport,importar:openImport,grupos:()=>setView("grupos"),nuevogrupo:openNuevoGrupo,unirgrupo:openUnir,gastogrupo:()=>openGastoGrupo(),invitar:invitarGrupo,salirgrupo:salirGrupo,volvergrupos:()=>setView("grupos"),nuevogasto:()=>openMov(null,"gasto"),nuevoingreso:()=>openMov(null,"ingreso"),informe:openReport,nombre:openNombre,clave:sendReset,privacidad:()=>{location.href="privacidad.html"},borrar:openBorrar,salir:()=>{if(confirmSalir()){_auth.signOut()}},
     nuevofijo:()=>openFijo(),nuevameta:()=>openMeta(),metas:()=>{setView("mas");setTimeout(()=>document.getElementById("metas")?.scrollIntoView({behavior:"smooth"}),50)}})[b.dataset.act]());
 }
 let salirT=0;function confirmSalir(){const b=document.querySelector('[data-act="salir"]');if(Date.now()-salirT<4000)return true;salirT=Date.now();if(b)b.textContent="¿Seguro? Pulsa otra vez";return false}
