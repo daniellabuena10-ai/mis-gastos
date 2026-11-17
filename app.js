@@ -147,7 +147,7 @@ function openBorrar(){
       const u=_auth.currentUser;
       await u.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(u.email,pass));
       const base=window._base;
-      for(const k of ["gastos","fijos","metas","config"]){const s=await base.collection(k).get();for(const d of s.docs)await d.ref.delete()}
+      for(const k of ["gastos","fijos","metas","config","tickets"]){const s=await base.collection(k).get();for(const d of s.docs)await d.ref.delete()}
       unsubs.forEach(f=>f());unsubs=[];
       await u.delete();
       closeSheet();toast("Tu cuenta y tus datos se han borrado");
@@ -156,6 +156,18 @@ function openBorrar(){
   };
 }
 
+
+
+/* ================= Tickets ================= */
+function compressImg(file){return new Promise((res,rej)=>{const url=URL.createObjectURL(file),img=new Image();
+  img.onload=()=>{const M=1280,k=Math.min(1,M/Math.max(img.width,img.height)),c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
+    c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);let q=.72,d=c.toDataURL("image/jpeg",q);while(d.length>700000&&q>.3){q-=.12;d=c.toDataURL("image/jpeg",q)}res(d)};
+  img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error("img"))};img.src=url})}
+const tkCache={};
+async function getTicket(id){if(tkCache[id])return tkCache[id];try{const s=await window._base.collection("tickets").doc(id).get();const d=s.exists?s.data().img:null;if(d)tkCache[id]=d;return d}catch(e){return null}}
+function putTicket(id,data){tkCache[id]=data;window._base.collection("tickets").doc(id).set({img:data,creado:Date.now()}).catch(()=>toast("No se ha podido guardar la foto del ticket"))}
+function delTicket(id){delete tkCache[id];window._base&&window._base.collection("tickets").doc(id).delete().catch(()=>{})}
+function viewTicket(src){const v=document.createElement("div");v.className="tk-view";v.innerHTML=`<img src="${src}" alt="Ticket"><button class="xbtn" aria-label="Cerrar">${svg("x")}</button>`;v.onclick=()=>v.remove();document.body.appendChild(v)}
 
 /* ================= Avisos ================= */
 function computeAlerts(){
@@ -240,6 +252,7 @@ function delMov(id,{undo=true}={}){
   if(m.fijo&&state.fijos[m.fijo]){const f=state.fijos[m.fijo];fijoPrev=JSON.parse(JSON.stringify(f));const mk=m.fecha.slice(0,7);
     f.omitidos=[...new Set([...(f.omitidos||[]),mk])];store&&store.save("fijos",f)}
   render();store&&store.del("mov",id);
+  if(m.ticket)setTimeout(()=>{if(!state.mov[id])delTicket(id)},8000);
   if(undo)toast(`${tipoOf(m)==="ingreso"?"Ingreso":"Gasto"} borrado`,()=>{if(fijoPrev){state.fijos[fijoPrev.id]=fijoPrev;store&&store.save("fijos",fijoPrev)}saveMov(m)});
 }
 function saveFijo(f){state.fijos[f.id]=f;store&&store.save("fijos",f);generarFijos();render()}
@@ -306,7 +319,7 @@ function itemHTML(g,showDate){
   const d=showDate?new Date(g.fecha+"T12:00").toLocaleDateString("es-ES",{day:"numeric",month:"short",year:"2-digit"})+" · ":"";
   return `<div class="item" data-mov="${esc(g.id)}">
     ${icoHTML(c)}
-    <div style="min-width:0"><div class="t">${esc(g.nota||c.n)}</div><div class="small">${d}${esc(c.n)}${g.metodo?" · "+esc(g.metodo):""}${g.fijo?`<span class="tag">${svg("repeat")}Fijo</span>`:""}</div></div>
+    <div style="min-width:0"><div class="t">${esc(g.nota||c.n)}</div><div class="small">${d}${esc(c.n)}${g.metodo?" · "+esc(g.metodo):""}${g.fijo?`<span class="tag">${svg("repeat")}Fijo</span>`:""}${g.ticket?`<span class="tag">${svg("receipt")}Ticket</span>`:""}</div></div>
     <div class="amt ${t==="ingreso"?"inc":""}">${t==="ingreso"?"+":"−"}${amtHTML(g.importe)}</div></div>`;
 }
 
@@ -656,12 +669,21 @@ function openMov(g,tipo0){
         <label class="field small">Pago<select id="metodo">${METODOS.map(m=>`<option ${m===(g.metodo||"")?"selected":""} value="${m}">${m||"—"}</option>`).join("")}</select></label>
       </div>
       ${editing?(g.fijo?`<div class="hint">${svg("repeat")}<span>Apuntado automáticamente por un fijo. Si lo borras, solo se quita este mes.</span></div>`:""):`<label class="check"><input type="checkbox" id="rep"> Repetir cada mes (se apuntará solo)</label>`}
+      <div class="ticket"><label class="btn sm" for="tkIn" id="tkLbl">${svg("receipt")}${g.ticket?"Cambiar foto del ticket":"Añadir foto del ticket"}</label><input type="file" id="tkIn" accept="image/*" hidden>
+        <div id="tkPrev">${g.ticket?`<div class="small">Cargando ticket…</div>`:""}</div></div>
       <div class="btns">
         ${editing?`<button type="button" class="btn danger" id="del">Borrar</button>`:`<button type="button" class="btn" id="cancel">Cancelar</button>`}
         <button class="btn primary" type="submit">Guardar</button>
       </div><div class="note" id="err"></div>
     </form>`);
   wireTipoCats(st);
+  const prev=sheet.querySelector("#tkPrev");
+  const showTk=src=>{prev.innerHTML=src?`<img class="tk-thumb" src="${src}" alt="Foto del ticket"><button type="button" class="link" id="tkDel">${svg("x")}Quitar foto</button>`:"";
+    const d=prev.querySelector("#tkDel");if(d)d.onclick=()=>{st.ticketData=null;st.ticketRemove=true;showTk(null);sheet.querySelector("#tkLbl").lastChild.textContent="Añadir foto del ticket"};
+    const im=prev.querySelector("img");if(im)im.onclick=()=>viewTicket(src)};
+  if(g.ticket&&g.id)getTicket(g.id).then(src=>{if(!st.ticketData&&!st.ticketRemove)showTk(src)});
+  sheet.querySelector("#tkIn").onchange=async e=>{const f=e.target.files&&e.target.files[0];if(!f)return;prev.innerHTML=`<div class="small">Procesando foto…</div>`;
+    try{st.ticketData=await compressImg(f);st.ticketRemove=false;showTk(st.ticketData)}catch(err){prev.innerHTML=`<div class="note">No se ha podido leer la imagen.</div>`}};
   const imp=sheet.querySelector("#imp");if(!editing)setTimeout(()=>imp.focus(),150);
   sheet.querySelector("#cancel")?.addEventListener("click",closeSheet);
   const del=sheet.querySelector("#del");if(del)confirmBtn(del,()=>{delMov(g.id);closeSheet()});
@@ -676,9 +698,12 @@ function openMov(g,tipo0){
       const f={id:fid,...base,dia:+fecha.slice(8,10),desde:mk,activo:true,omitidos:[]};
       // crea ya el de este mes con la fecha elegida
       const m={id:`f_${fid}_${mk}`,...base,fecha,fijo:fid,creado:Date.now()};
+      if(st.ticketData){m.ticket=true;putTicket(m.id,st.ticketData)}
       saveMov(m);saveFijo(f);
     }else{
-      saveMov({...g,...base,id:g.id||uid("g"),fecha,creado:g.creado||Date.now()});
+      const id=g.id||uid("g"),m={...g,...base,id,fecha,creado:g.creado||Date.now()};
+      if(st.ticketData){m.ticket=true;putTicket(id,st.ticketData)}else if(st.ticketRemove){delete m.ticket;delTicket(id)}
+      saveMov(m);
     }
     const [y,mm]=fecha.split("-");cur=new Date(+y,+mm-1,1);render();closeSheet();
   };

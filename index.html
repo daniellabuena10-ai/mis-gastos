@@ -311,6 +311,12 @@ textarea.csv{background:var(--surface-2);border-color:var(--line);border-radius:
 }
 [hidden]{display:none!important}
 #report{display:none}
+.ticket{margin:4px 0 14px;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.ticket .btn.sm{display:inline-flex}
+.tk-thumb{max-width:140px;max-height:160px;border-radius:12px;border:1px solid var(--line);cursor:zoom-in;display:block}
+.tk-view{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.92);display:grid;place-items:center;padding:20px}
+.tk-view img{max-width:100%;max-height:90vh;border-radius:12px}
+.tk-view .xbtn{position:absolute;top:calc(env(safe-area-inset-top) + 14px);right:14px;background:rgba(255,255,255,.15);color:#fff}
 @media print{
   body.printing{background:#fff!important;color:#111;padding:0!important}
   body.printing #app>*:not(#report),body.printing nav,body.printing .fab,body.printing .sheet-bg,body.printing #toastHost{display:none!important}
