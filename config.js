@@ -9,4 +9,4 @@ window.FIREBASE_CONFIG = {
 };
 
 // Clave pública de notificaciones web (Cloud Messaging → Web Push certificates)
-window.VAPID_KEY = "";
+window.VAPID_KEY = "BJjsxp5IQ3mg80jFKVv_s2QUhlfzP9dTyKcVIBuDNCYd3c6puqZW8ItI9ivCb2DOnmIILRGyodHZbigTTRXGNfc";
