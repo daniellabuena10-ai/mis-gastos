@@ -181,6 +181,13 @@ textarea.csv{width:100%;height:150px;font:12px ui-monospace,SFMono-Regular,Menlo
 .pill.up{background:var(--neg-soft);color:var(--neg)}.pill.down{background:var(--accent-soft);color:var(--pos)}
 .pill .i{width:12px;height:12px;stroke-width:2.2}
 [hidden]{display:none!important}
+.tip{display:grid;grid-template-columns:38px 1fr;gap:12px;align-items:start;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
+.tip:last-child{border-bottom:0}
+.wl-item{position:relative;border-bottom:1px solid var(--line);padding:6px 0}
+.wl-item:last-child{border-bottom:0}
+.wl-del{position:absolute;right:0;top:8px;z-index:2;border:0;background:var(--soft);width:28px;height:28px;border-radius:50%;display:grid;place-items:center;color:var(--muted);cursor:pointer}
+.wl-del .i{width:15px;height:15px}
+nav.tabbar button{font-size:10.5px}
 #auth{min-height:100%;display:flex;flex-direction:column;justify-content:center;max-width:420px;margin:0 auto;padding:24px 4px 40px}
 .brand{display:flex;flex-direction:column;align-items:center;gap:14px;margin-bottom:28px;text-align:center}
 .brand .mark{width:68px;height:68px;border-radius:20px;background:linear-gradient(155deg,var(--hero),var(--hero-2));display:grid;place-items:center;color:#7fe0c4;box-shadow:0 10px 30px rgba(15,27,45,.25)}
@@ -210,6 +217,7 @@ textarea.csv{width:100%;height:150px;font:12px ui-monospace,SFMono-Regular,Menlo
   </header>
   <div class="banner" id="banner"></div>
   <main id="view"></main>
+  <section id="invWidgets" hidden></section>
 </div>
 
 <button class="fab" id="add" aria-label="Añadir movimiento"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Añadir</button>
@@ -218,6 +226,7 @@ textarea.csv{width:100%;height:150px;font:12px ui-monospace,SFMono-Regular,Menlo
   <button data-v="inicio" class="on"><svg class="i" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>Resumen</button>
   <button data-v="analisis"><svg class="i" viewBox="0 0 24 24"><path d="M4 20V11M10 20V5M16 20v-6M21 20H3"/></svg>Análisis</button>
   <button data-v="buscar"><svg class="i" viewBox="0 0 24 24"><path d="M4 6.5h16M4 12h16M4 17.5h10"/></svg>Movimientos</button>
+  <button data-v="inversion"><svg class="i" viewBox="0 0 24 24"><path d="M3 17.5 9 11.5l4 4 8-8"/><path d="M15 7.5h6v6"/></svg>Inversión</button>
   <button data-v="mas"><svg class="i" viewBox="0 0 24 24"><path d="M4 6.5h9M17 6.5h3M4 12h3M11 12h9M4 17.5h11M19 17.5h1"/><circle cx="15" cy="6.5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17.5" r="2"/></svg>Ajustes</button>
 </div></nav>
 

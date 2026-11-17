@@ -47,7 +47,7 @@ const local={
 const localStore={save(){local.save()},del(){local.save()},saveAj(){local.save()}};
 
 let unsubs=[],me=null;
-function resetState(){state={mov:{},fijos:{},metas:{},aj:{presupuesto:0,porCat:{},cats:null,catsIng:null}};loaded={mov:false,fijos:false};cur=new Date();cur.setDate(1);view="inicio"}
+function resetState(){state={mov:{},fijos:{},metas:{},aj:{presupuesto:0,porCat:{},cats:null,catsIng:null,watchlist:null}};loaded={mov:false,fijos:false};cur=new Date();cur.setDate(1);view="inicio";invMounted=false;const iw=document.getElementById("invWidgets");if(iw)iw.innerHTML=""}
 async function initStore(){
   if(!window.firebase||!window.FIREBASE_CONFIG||!FIREBASE_CONFIG.apiKey){document.getElementById("splash").textContent="Falta configurar la app.";return}
   firebase.initializeApp(FIREBASE_CONFIG);
@@ -83,7 +83,7 @@ function startData(fdb,u){
       render();
     },()=>{clearTimeout(timer);showBanner("No se pudieron cargar tus datos. Comprueba tu conexión.")}));
   }
-  unsubs.push(ajRef.onSnapshot(s=>{if(s.exists){const d=s.data();state.aj={presupuesto:d.presupuesto||0,porCat:{...(d.porCat||{})},cats:d.cats||null,catsIng:d.catsIng||null};render()}},()=>{}));
+  unsubs.push(ajRef.onSnapshot(s=>{if(s.exists){const d=s.data();state.aj={presupuesto:d.presupuesto||0,porCat:{...(d.porCat||{})},cats:d.cats||null,catsIng:d.catsIng||null,watchlist:Array.isArray(d.watchlist)?d.watchlist:null};render();if(view==="inversion")mountWatchlist()}},()=>{}));
   const queues={};
   const serial=(key,fn)=>{queues[key]=(queues[key]||Promise.resolve()).then(fn).catch(fail);return queues[key]};
   store={
@@ -198,14 +198,17 @@ const ingresos=arr=>arr.filter(m=>tipoOf(m)==="ingreso");
 function render(){
   const ml=cur.toLocaleDateString("es-ES",{month:"long",year:"numeric"});document.getElementById("month").textContent=ml.charAt(0).toUpperCase()+ml.slice(1);
   document.getElementById("monthnav").hidden=!(view==="inicio"||view==="analisis");
-  document.getElementById("title").textContent={inicio:"Resumen",analisis:"Análisis",buscar:"Movimientos",mas:"Ajustes"}[view];
-  document.getElementById("add").hidden=view==="mas";
+  document.getElementById("title").textContent={inicio:"Resumen",analisis:"Análisis",buscar:"Movimientos",inversion:"Inversión",mas:"Ajustes"}[view];
+  document.getElementById("add").hidden=view==="mas"||view==="inversion";
+  document.getElementById("invWidgets").hidden=view!=="inversion";
+  if(view==="inversion")mountInversion();
   const el=document.getElementById("view");
-  const keepFocus=view==="buscar"&&document.activeElement&&document.activeElement.id==="qtext";
+  const fid=document.activeElement&&document.activeElement.id;
+  const keepFocus=(view==="buscar"&&fid==="qtext")||(view==="inversion"&&/^s(Ini|Mes|Anos|Rent)$/.test(fid||""));
   const selStart=keepFocus?document.activeElement.selectionStart:0;
-  el.innerHTML=({inicio:vInicio,analisis:vAnalisis,buscar:vBuscar,mas:vMas})[view]();
+  el.innerHTML=({inicio:vInicio,analisis:vAnalisis,buscar:vBuscar,inversion:vInversion,mas:vMas})[view]();
   wire(el);
-  if(keepFocus){const i=document.getElementById("qtext");i.focus();try{i.setSelectionRange(selStart,selStart)}catch(e){}}
+  if(keepFocus){const i=document.getElementById(fid);i.focus();try{i.setSelectionRange(selStart,selStart)}catch(e){}}
 }
 
 function itemHTML(g,showDate){
@@ -376,8 +379,116 @@ function vMas(){
   </div>`;
 }
 
+
+/* ================= Inversión ================= */
+let invMounted=false,sim=null;
+const DEF_WATCH=["AMEX:VT","AMEX:VOO","NASDAQ:QQQ","BINANCE:BTCUSDT"];
+const watchlist=()=>state.aj.watchlist&&state.aj.watchlist.length?state.aj.watchlist:DEF_WATCH;
+const isDark=()=>{const t=document.documentElement.dataset.theme;return t?t==="dark":matchMedia("(prefers-color-scheme: dark)").matches};
+function tvWidget(host,name,cfg){
+  const box=document.createElement("div");box.className="tradingview-widget-container";
+  box.innerHTML='<div class="tradingview-widget-container__widget"></div>';
+  const s=document.createElement("script");s.type="text/javascript";s.async=true;
+  s.src=`https://s3.tradingview.com/external-embedding/embed-widget-${name}.js`;
+  s.innerHTML=JSON.stringify({colorTheme:isDark()?"dark":"light",isTransparent:true,locale:"es",...cfg});
+  box.appendChild(s);host.appendChild(box);
+}
+function mountInversion(){
+  if(invMounted)return;invMounted=true;
+  const iw=document.getElementById("invWidgets");
+  iw.innerHTML=`<div class="card"><h3>Mercados</h3><p class="small" style="margin:4px 0 10px">Cotizaciones con retraso, de TradingView. Toca una pestaña para cambiar de mercado.</p><div id="tvMarkets"></div></div>
+    <div class="card"><div class="row" style="margin-bottom:4px"><h3>Mi lista de seguimiento</h3><button class="btn sm" id="wlAdd">${svg("plus")}Añadir</button></div>
+      <p class="small" style="margin:0 0 6px">Escribe el símbolo tal como aparece en TradingView, por ejemplo <b>AAPL</b>, <b>BME:SAN</b> o <b>XETR:VWCE</b>.</p><div id="tvWatch"></div></div>
+    <div class="card"><h3 style="margin-bottom:10px">Noticias de mercado</h3><div id="tvNews"></div></div>
+    <div class="card hint" style="display:block;box-shadow:none"><b style="color:var(--ink)">Aviso importante.</b> Esta sección es informativa y educativa. No es asesoramiento financiero ni una recomendación para comprar o vender ningún producto. Invertir conlleva riesgo de perder dinero y las rentabilidades pasadas no garantizan las futuras. Si tienes dudas, consulta con un asesor registrado en la CNMV.</div>`;
+  tvWidget(iw.querySelector("#tvMarkets"),"market-overview",{dateRange:"12M",showChart:true,width:"100%",height:560,showSymbolLogo:true,showFloatingTooltip:false,
+    plotLineColorGrowing:"#0d7a64",plotLineColorFalling:"#b42318",gridLineColor:"rgba(102,112,133,0.12)",scaleFontColor:"#667085",
+    belowLineFillColorGrowing:"rgba(13,122,100,0.12)",belowLineFillColorFalling:"rgba(180,35,24,0.10)",belowLineFillColorGrowingBottom:"rgba(13,122,100,0)",belowLineFillColorFallingBottom:"rgba(180,35,24,0)",symbolActiveColor:"rgba(13,122,100,0.10)",
+    tabs:[
+      {title:"Índices",symbols:[{s:"TVC:IBEX35",d:"IBEX 35"},{s:"FOREXCOM:SPXUSD",d:"S&P 500"},{s:"FOREXCOM:NSXUSD",d:"Nasdaq 100"},{s:"TVC:SX5E",d:"Euro Stoxx 50"},{s:"FOREXCOM:DJI",d:"Dow Jones"}]},
+      {title:"Fondos indexados",symbols:[{s:"AMEX:VT",d:"Vanguard Total World"},{s:"AMEX:VOO",d:"Vanguard S&P 500"},{s:"NASDAQ:QQQ",d:"Invesco Nasdaq 100"},{s:"AMEX:BND",d:"Vanguard Bonos EE. UU."},{s:"AMEX:GLD",d:"Oro (SPDR Gold)"}]},
+      {title:"Cripto",symbols:[{s:"BINANCE:BTCUSDT",d:"Bitcoin"},{s:"BINANCE:ETHUSDT",d:"Ethereum"},{s:"BINANCE:SOLUSDT",d:"Solana"}]},
+      {title:"Divisas",symbols:[{s:"FX:EURUSD",d:"Euro / Dólar"},{s:"FX:EURGBP",d:"Euro / Libra"},{s:"FX_IDC:EURMXN",d:"Euro / Peso mexicano"}]}]});
+  tvWidget(iw.querySelector("#tvNews"),"timeline",{feedMode:"market",market:"stock",displayMode:"regular",width:"100%",height:520});
+  iw.querySelector("#wlAdd").onclick=openWatchAdd;
+  mountWatchlist();
+}
+let wlKey="";
+function mountWatchlist(){
+  const host=document.getElementById("tvWatch");if(!host)return;
+  const list=watchlist(),key=list.join("|")+(isDark()?"d":"l");if(key===wlKey&&host.childElementCount)return;wlKey=key;
+  host.innerHTML="";
+  list.forEach(sym=>{const row=document.createElement("div");row.className="wl-item";
+    row.innerHTML=`<button class="wl-del" aria-label="Quitar ${esc(sym)}" title="Quitar">${svg("x")}</button>`;
+    row.querySelector(".wl-del").onclick=()=>{const l=watchlist().filter(x=>x!==sym);state.aj.watchlist=l.length?l:[];saveAj();wlKey="";mountWatchlist()};
+    host.appendChild(row);
+    tvWidget(row,"mini-symbol-overview",{symbol:sym,width:"100%",height:170,dateRange:"12M",autosize:false,chartOnly:false,noTimeScale:true,trendLineColor:"rgba(13,122,100,1)",underLineColor:"rgba(13,122,100,0.12)",underLineBottomColor:"rgba(13,122,100,0)"});
+  });
+  if(!list.length)host.innerHTML=`<div class="empty">Tu lista está vacía. Pulsa Añadir.</div>`;
+}
+function openWatchAdd(){
+  openSheet(`<h2>Añadir a mi lista</h2>
+    <label class="field small" for="wlSym">Símbolo<input id="wlSym" autocomplete="off" autocapitalize="characters" placeholder="Ej. AAPL, BME:ITX, XETR:VWCE"></label>
+    <div class="hint">${svg("search")||""}<span>Búscalo en tradingview.com y copia el código que aparece junto al nombre. Para acciones españolas usa <b>BME:</b> delante (BME:SAN, BME:ITX…).</span></div>
+    <div class="note" id="err"></div>
+    <div class="btns"><button class="btn" data-close>Cancelar</button><button class="btn primary" id="ok">Añadir</button></div>`);
+  const inp=sheet.querySelector("#wlSym");setTimeout(()=>inp.focus(),150);
+  sheet.querySelector("#ok").onclick=()=>{const v=inp.value.trim().toUpperCase().replace(/\s+/g,"");
+    if(!/^[A-Z0-9_]+(:[A-Z0-9_.!-]+)?$/.test(v)){sheet.querySelector("#err").textContent="Escribe un símbolo válido, por ejemplo AAPL o BME:SAN.";return}
+    const l=watchlist().filter(x=>x!==v);if(l.length>=12){sheet.querySelector("#err").textContent="Máximo 12 valores en la lista.";return}
+    state.aj.watchlist=[...l,v];saveAj();wlKey="";mountWatchlist();closeSheet();toast(`${v} añadido a tu lista`)};
+}
+function vInversion(){
+  const months=[];for(let i=1;i<=6;i++){const d=new Date(cur.getFullYear(),cur.getMonth()-i+1,1),ms=movsMes(d);months.push({g:sum(gastos(ms)),i:sum(ingresos(ms))})}
+  const withData=months.filter(m=>m.g||m.i),n=Math.max(1,withData.length);
+  const avgG=withData.reduce((s,m)=>s+m.g,0)/n,avgI=withData.reduce((s,m)=>s+m.i,0)/n,avgS=avgI-avgG;
+  const rate=avgI>0?avgS/avgI*100:null;
+  const colchon=sum(Object.values(state.metas).map(m=>({importe:m.ahorrado||0})));
+  const objMin=avgG*3,objMax=avgG*6,colPct=objMin>0?Math.min(100,colchon/objMin*100):0;
+  if(!sim)sim={ini:0,mes:Math.max(0,Math.round(avgS>0?avgS*0.5:50)),anos:10,rent:5};
+  const tips=[];
+  if(!withData.length)tips.push(["receipt","Apunta tus ingresos y gastos durante un par de meses: así esta sección podrá calcular cuánto puedes invertir."]);
+  else{
+    if(avgS<=0)tips.push(["alert","Ahora mismo gastas lo mismo o más de lo que ingresas. Antes de invertir, conviene ajustar gastos hasta ahorrar algo cada mes."]);
+    else if(colchon<objMin)tips.push(["shield",`Lo habitual es tener primero un colchón de emergencia de 3 a 6 meses de gastos (${fmt0(objMin)} – ${fmt0(objMax)}). Puedes crearlo como meta de ahorro en Ajustes.`]);
+    else tips.push(["check","Tienes un colchón de emergencia razonable. Lo que ahorres a partir de ahí es lo que podrías plantearte invertir a largo plazo."]);
+    if(rate!=null&&rate>0&&rate<10)tips.push(["gauge",`Ahorras alrededor del ${Math.round(rate)} % de tus ingresos. Una referencia común es apuntar al 10–20 %.`]);
+  }
+  tips.push(["layers","Diversificar (muchas empresas y países a la vez, como hacen los fondos indexados globales) reduce el riesgo de depender de una sola apuesta."]);
+  tips.push(["coins","Fíjate en las comisiones: un 1 % anual de diferencia se come una parte grande del resultado a 20 o 30 años."]);
+  tips.push(["calendar","Invierte solo el dinero que no vayas a necesitar en años. A corto plazo la bolsa puede caer bastante."]);
+  return `<section class="hero">
+    <div class="lbl">Tu capacidad de inversión · media de los últimos meses</div>
+    <div class="big">${avgS<0?"−":""}${amtHTML(Math.abs(avgS))}<small style="font-size:.45em;opacity:.7"> /mes</small></div>
+    <div class="insight">${rate==null?"Aún no hay datos suficientes":`Ahorras el <b>${Math.round(rate)} %</b> de lo que ingresas`}</div>
+    <div class="flows">
+      <div class="flow"><div class="dot" style="background:rgba(63,195,161,.18);color:#7fe0c4">${svg("shield")}</div><div><div class="lbl">En tus metas</div><div class="v">${fmt0(colchon)}</div></div></div>
+      <div class="flow"><div class="dot" style="background:rgba(255,255,255,.1);color:#cfd8e3">${svg("target")}</div><div><div class="lbl">Colchón ideal</div><div class="v">${objMin?fmt0(objMin):"—"}</div></div></div>
+    </div>
+    ${objMin?`<div class="hbar"><div style="width:${colPct}%"></div></div><div class="hrow"><span>Colchón de emergencia (3 meses de gastos)</span><span><b>${Math.round(colPct)} %</b></span></div>`:""}
+  </section>
+  <div class="card"><h3 style="margin-bottom:12px">Antes de invertir</h3>${tips.map(([ic,t])=>`<div class="tip">${icoHTML({i:ic,c:"#0d7a64"})}<span>${t}</span></div>`).join("")}</div>
+  <div class="card" id="simCard"><h3>Simulador de interés compuesto</h3><p class="small" style="margin:4px 0 12px">Calcula cuánto podría crecer una inversión periódica. La rentabilidad es una suposición tuya, no una promesa.</p>
+    <div class="two"><label class="field small" for="sIni">Capital inicial (€)<input id="sIni" inputmode="decimal" value="${sim.ini}"></label><label class="field small" for="sMes">Aportación al mes (€)<input id="sMes" inputmode="decimal" value="${sim.mes}"></label></div>
+    <div class="two"><label class="field small" for="sAnos">Años<input id="sAnos" inputmode="numeric" value="${sim.anos}"></label><label class="field small" for="sRent">Rentabilidad anual (%)<input id="sRent" inputmode="decimal" value="${String(sim.rent).replace(".",",")}"></label></div>
+    <div id="simOut">${simHTML()}</div></div>`;
+}
+function simCalc(){const r=(sim.rent||0)/100/12,N=Math.max(0,Math.min(60,Math.round(sim.anos||0)))*12;let v=+sim.ini||0;const pts=[v];for(let k=1;k<=N;k++){v=v*(1+r)+(+sim.mes||0);if(k%12===0)pts.push(v)}
+  const ap=(+sim.ini||0)+(+sim.mes||0)*N;return {v,ap,pts}}
+function simHTML(){const {v,ap,pts}=simCalc();const g=v-ap;
+  const W=320,H=110,T=6,max=Math.max(1,...pts),L=pts.length-1||1;
+  const xy=pts.map((p,k)=>[k/L*W,T+H-(p/max)*H]);const line=xy.map(([x,y],k)=>`${k?"L":"M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
+  const apl=pts.map((_,k)=>{const a=(+sim.ini||0)+(+sim.mes||0)*12*k;return [k/L*W,T+H-(a/max)*H]}).map(([x,y],k)=>`${k?"L":"M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
+  return `<div class="trio" style="margin:4px 0 12px"><div><div class="lbl">Aportado</div><div class="v">${fmt0(ap)}</div></div><div><div class="lbl">Valor estimado</div><div class="v" style="color:var(--pos)">${fmt0(v)}</div></div><div><div class="lbl">Ganancia</div><div class="v">${g>=0?"+":"−"}${fmt0(Math.abs(g))}</div></div></div>
+  ${pts.length>1?`<svg viewBox="0 0 ${W} ${T+H+4}" width="100%" role="img" aria-label="Evolución estimada"><path d="${line}L${W},${T+H}L0,${T+H}Z" style="fill:var(--accent-soft)"/><path d="${apl}" style="stroke:var(--muted);fill:none" stroke-width="1.5" stroke-dasharray="4 4"/><path d="${line}" style="stroke:var(--pos);fill:none" stroke-width="2.2"/></svg>
+  <div class="legend"><span><i style="background:var(--pos)"></i>Valor estimado</span><span><i style="background:var(--muted)"></i>Dinero aportado</span></div>`:""}`}
+function wireSim(el){const c=el.querySelector("#simCard");if(!c)return;
+  const map={sIni:"ini",sMes:"mes",sAnos:"anos",sRent:"rent"};
+  Object.entries(map).forEach(([id,k])=>{const i=c.querySelector("#"+id);i.oninput=()=>{const v=num(i.value);sim[k]=isNaN(v)?0:Math.max(0,v);c.querySelector("#simOut").innerHTML=simHTML()}})}
+
 /* ================= Interacción ================= */
 function wire(el){
+  wireSim(el);
   el.querySelectorAll("[data-mov]").forEach(i=>i.onclick=()=>openMov(state.mov[i.dataset.mov]));
   el.querySelectorAll("[data-fijo]").forEach(i=>i.onclick=()=>openFijo(state.fijos[i.dataset.fijo]));
   el.querySelectorAll("[data-meta]").forEach(i=>i.onclick=()=>openMeta(state.metas[i.dataset.meta]));

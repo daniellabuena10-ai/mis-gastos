@@ -46,6 +46,7 @@ const ICONS={
   moto:'<circle cx="5.5" cy="16.5" r="3"/><circle cx="18.5" cy="16.5" r="3"/><path d="M5.5 16.5 9 10h5l2.5 6.5M14 10l-1.5-3.5H15M9 10l3 6.5h4"/>',
   beach:'<path d="M3 20.5h18M12 20.5 8 9"/><path d="M3.5 11A9 9 0 0 1 17 6.5z"/>',
   piggy:'<path d="M5 11.5a7 6 0 0 1 12.5-3.5H20v3l1 1v3h-2a7 6 0 0 1-2 2.5V20h-3v-1.6a8 8 0 0 1-3 0V20H8v-2.5A6 6 0 0 1 5 11.5z"/><path d="M5 11.5c-1.5 0-2.5-1-2.5-2.5M10 7h4"/><circle cx="16" cy="10.5" r=".6"/>',
+  search:'<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/>',
   // interfaz
   plus:'<path d="M12 5v14M5 12h14"/>', x:'<path d="M6 6l12 12M18 6 6 18"/>',
   chevL:'<path d="m14.5 6-6 6 6 6"/>', chevR:'<path d="m9.5 6 6 6-6 6"/>',
