@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Mis gastos</title>
 <meta name="description" content="Controla tus gastos, ingresos, presupuesto y metas de ahorro.">
-<meta name="theme-color" content="#0f1b2d">
+<meta name="theme-color" content="#0b1f3a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
 /* Banca personal sobria: superficie clara y fría, tarjeta resumen oscura, un solo acento verde azulado; cifras en Sora tabular. */
 :root{
@@ -180,6 +180,95 @@ textarea.csv{width:100%;height:150px;font:12px ui-monospace,SFMono-Regular,Menlo
 .pill{display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:700;padding:2px 7px;border-radius:99px}
 .pill.up{background:var(--neg-soft);color:var(--neg)}.pill.down{background:var(--accent-soft);color:var(--pos)}
 .pill .i{width:12px;height:12px;stroke-width:2.2}
+
+/* ===== Tema "business": sobrio, denso, bordes finos, azul marino corporativo ===== */
+:root{
+  --bg:#f3f4f6;--surface:#ffffff;--ink:#0b1220;--muted:#5b6475;--line:#e2e5ea;--soft:#f6f7f9;
+  --accent:#1f3a68;--accent-ink:#ffffff;--accent-soft:#e8edf5;
+  --pos:#127a55;--neg:#b8322a;--neg-soft:#fbeceb;--warn:#a15c07;--warn-soft:#fdf3e4;
+  --hero:#0b1f3a;--hero-2:#0b1f3a;--hero-ink:#f4f6f9;--hero-muted:#93a3b8;
+  --display:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;--body:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;--mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --r:10px;--shadow:none;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0a0d12;--surface:#11161e;--ink:#e6e9ee;--muted:#8b94a3;--line:#222a35;--soft:#161c25;
+  --accent:#8fb0e6;--accent-ink:#0a1222;--accent-soft:#1a2638;
+  --pos:#3ccf95;--neg:#f2766b;--neg-soft:#3a1714;--warn:#f0b04a;--warn-soft:#3a2a0c;
+  --hero:#121a27;--hero-2:#121a27;--hero-ink:#eef1f5;--hero-muted:#8d9bb0}}
+:root[data-theme="dark"]{
+  --bg:#0a0d12;--surface:#11161e;--ink:#e6e9ee;--muted:#8b94a3;--line:#222a35;--soft:#161c25;
+  --accent:#8fb0e6;--accent-ink:#0a1222;--accent-soft:#1a2638;
+  --pos:#3ccf95;--neg:#f2766b;--neg-soft:#3a1714;--warn:#f0b04a;--warn-soft:#3a2a0c;
+  --hero:#121a27;--hero-2:#121a27;--hero-ink:#eef1f5;--hero-muted:#8d9bb0}
+html,body{font-size:14.5px;letter-spacing:-.003em}
+h1{font-size:20px;font-weight:600;letter-spacing:-.01em}
+h3{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.card{border-radius:var(--r);padding:16px 16px;box-shadow:none}
+.lbl{font-size:11px;text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+.big{font-family:var(--mono);font-weight:600;font-size:32px;letter-spacing:-.02em}
+.amt,.flow .v,.trio .v,.stat .v,.day .num{font-family:var(--mono);font-weight:500;letter-spacing:-.01em}
+.amt{font-size:14px}
+.amt small{font-size:1em;font-weight:inherit;opacity:.55}.big small{font-size:.62em;opacity:.6;font-weight:500}
+/* cabecera */
+header{border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:14px}
+.monthnav{border-radius:8px;box-shadow:none;padding:2px}
+.monthnav button{border-radius:6px;width:30px;height:30px}
+.monthnav span{font-size:13px;min-width:120px}
+/* resumen */
+.hero{border-radius:var(--r);background:var(--hero);padding:18px 18px 16px}
+.hero::after{display:none}
+.hero .link{color:#b9cdf0}
+.flows{gap:0;border-top:1px solid rgba(255,255,255,.1);margin-top:16px;padding-top:12px;grid-template-columns:1fr 1fr}
+.flow{background:none;border-radius:0;padding:0 12px 0 0}
+.flow+.flow{border-left:1px solid rgba(255,255,255,.1);padding-left:14px}
+.flow .dot{width:26px;height:26px;border-radius:6px}
+.hbar{height:4px;border-radius:2px}.hbar>div{border-radius:2px;background:#9fb9e3}
+.bar,.mini{border-radius:2px}.bar>div,.mini>div{border-radius:2px}
+/* listas */
+.ico{width:34px;height:34px;border-radius:8px;background:var(--soft);border:1px solid var(--line)}
+.item,.cat,.menu-item,.tip{grid-template-columns:34px 1fr auto}
+.tip{grid-template-columns:34px 1fr}
+.item{padding:10px 0}
+.item .t{font-weight:500;font-size:14px}
+.day{font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin:18px 2px 6px}
+.tag{border-radius:4px;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+.menu-item .ico,.tip .ico{--c:var(--accent)!important}
+/* controles */
+.seg{background:none;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:0;gap:18px;justify-content:flex-start}
+.seg button{flex:none;border-radius:0;padding:8px 0 10px;font-size:13px;border-bottom:2px solid transparent;margin-bottom:-1px}
+.seg button.on{background:none;box-shadow:none;color:var(--ink);border-bottom-color:var(--accent)}
+.sheet .seg,#authForm .seg{justify-content:stretch}.sheet .seg button,#authForm .seg button{flex:1}
+.btn{border-radius:8px;padding:11px 14px;font-weight:600;font-size:14px}
+.btn.sm{border-radius:6px;padding:7px 10px;font-size:12.5px}
+.field{font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+.field input,.field select,.input{border-radius:8px;text-transform:none;letter-spacing:0;padding:10px 12px}
+.chip{border-radius:8px}
+.filters button{border-radius:6px}
+.pick button{border-radius:6px}
+.trio>div{border-radius:8px;background:var(--soft);border:1px solid var(--line)}
+.pill{border-radius:4px}
+.empty .ico{border-radius:10px}
+.fab{border-radius:8px;height:46px;padding:0 16px 0 12px;font-size:14px;box-shadow:0 6px 18px rgba(11,31,58,.28)}
+.sheet{border-radius:14px 14px 0 0}
+.toast{border-radius:8px}
+.banner{border-radius:8px}
+.hint{border-radius:8px}
+nav.tabbar button .i{width:21px;height:21px}
+/* acceso */
+.brand .mark{border-radius:12px;background:var(--hero);box-shadow:none;color:#b9cdf0}
+.brand h1{font-size:22px}
+/* escritorio: menú lateral */
+@media (min-width:960px){
+  body{padding:28px 32px 48px 252px}
+  .wrap{max-width:820px}
+  nav.tabbar{top:0;bottom:0;right:auto;width:220px;flex-direction:column;justify-content:flex-start;border-top:0;border-right:1px solid var(--line);padding:24px 12px;background:var(--surface)}
+  nav.tabbar::before{content:"Mis gastos";display:block;font-weight:700;font-size:15px;padding:0 12px 20px;color:var(--ink)}
+  nav.tabbar div{flex-direction:column;gap:2px}
+  nav.tabbar button{flex:none;flex-direction:row;gap:12px;padding:10px 12px;font-size:14px;font-weight:500;border-radius:8px;justify-content:flex-start;color:var(--muted)}
+  nav.tabbar button.on{background:var(--accent-soft);color:var(--accent)}
+  .fab{right:40px;bottom:32px}
+  .stats{grid-template-columns:repeat(4,1fr)}
+}
 [hidden]{display:none!important}
 .tip{display:grid;grid-template-columns:38px 1fr;gap:12px;align-items:start;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
 .tip:last-child{border-bottom:0}
