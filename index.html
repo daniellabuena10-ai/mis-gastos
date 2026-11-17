@@ -414,6 +414,6 @@ input,select,textarea{font-size:max(16px,1em)}
 <script src="config.js"></script>
 <script src="icons.js"></script>
 <script src="app.js"></script>
-<script>(function(){let t=0;document.addEventListener("touchend",e=>{const n=Date.now();if(n-t<=300&&!e.target.closest("input,textarea,select"))e.preventDefault();t=n},{passive:false});["gesturestart","gesturechange"].forEach(ev=>document.addEventListener(ev,e=>e.preventDefault(),{passive:false}))})();</script>
+<script>(function(){["gesturestart","gesturechange"].forEach(ev=>document.addEventListener(ev,e=>e.preventDefault(),{passive:false}))})();</script>
 </body>
 </html>
