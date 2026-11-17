@@ -62,7 +62,7 @@ async function initStore(){
   });
 }
 function startData(fdb,u){
-  const base=fdb.collection("users").doc(u.uid);
+  const base=fdb.collection("users").doc(u.uid);window._base=base;
   const cols={mov:base.collection("gastos"),fijos:base.collection("fijos"),metas:base.collection("metas")};
   const ajRef=base.collection("config").doc("ajustes");
   const fail=e=>{
@@ -107,6 +107,7 @@ function drawAuth(msg="",ok=false){
     ${rec?"":`<label class="field small" for="aPass">Contraseña<input id="aPass" type="password" autocomplete="${reg?"new-password":"current-password"}" placeholder="${reg?"Mínimo 6 caracteres":"Tu contraseña"}"></label>`}
     <button class="btn primary" style="width:100%;margin-top:4px" id="aGo">${rec?"Enviar email":reg?"Crear cuenta":"Entrar"}</button>
     <div class="note" style="${ok?"color:var(--pos)":""}" id="aMsg">${esc(msg)}</div>
+    ${reg?`<p class="small" style="text-align:center;margin:10px 0 0">Al crear tu cuenta aceptas la <a href="privacidad.html" style="color:var(--accent)">política de privacidad y las condiciones</a>.</p>`:""}
     <div style="text-align:center;margin-top:6px">${rec?`<button type="button" class="link" data-m="entrar">Volver</button>`:reg?"":`<button type="button" class="link" data-m="recuperar">¿Has olvidado la contraseña?</button>`}</div>`;
   const f=document.getElementById("authForm");
   f.querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>{authMode=b.dataset.m;drawAuth()});
@@ -118,6 +119,40 @@ function drawAuth(msg="",ok=false){
       if(reg){const c=await _auth.createUserWithEmailAndPassword(email,pass);const n=f.querySelector("#aNombre").value.trim();if(n)await c.user.updateProfile({displayName:n})}
       else await _auth.signInWithEmailAndPassword(email,pass);
     }catch(err){drawAuth(AUTH_ERR[err.code]||"No se ha podido completar. Inténtalo de nuevo.");const em=document.getElementById("aEmail");if(em)em.value=email}
+  };
+}
+
+
+/* ================= Cuenta ================= */
+function openNombre(){
+  openSheet(`<h2>Cambiar nombre</h2><label class="field small" for="nNom">Nombre<input id="nNom" maxlength="40" autocomplete="name" value="${esc(me&&me.displayName||"")}"></label>
+    <div class="note" id="err"></div><div class="btns"><button class="btn" data-close>Cancelar</button><button class="btn primary" id="ok">Guardar</button></div>`);
+  sheet.querySelector("#ok").onclick=async()=>{const n=sheet.querySelector("#nNom").value.trim();if(!n){sheet.querySelector("#err").textContent="Escribe un nombre.";return}
+    try{await _auth.currentUser.updateProfile({displayName:n});me=_auth.currentUser;closeSheet();render();toast("Nombre actualizado")}catch(e){sheet.querySelector("#err").textContent="No se ha podido guardar. Revisa tu conexión."}};
+}
+async function sendReset(){
+  try{await _auth.sendPasswordResetEmail(me.email);toast("Te hemos enviado un email para cambiar la contraseña")}catch(e){toast("No se ha podido enviar el email. Revisa tu conexión.")}
+}
+function openBorrar(){
+  openSheet(`<h2>Borrar mi cuenta</h2>
+    <div class="hint" style="background:var(--neg-soft);color:var(--neg)">${svg("alert")}<span>Se borrarán <b>para siempre</b> tu cuenta y todos tus movimientos, fijos, metas y ajustes. No se puede deshacer.</span></div>
+    <p class="small">Si quieres conservar tus datos, antes usa <b>Exportar a Excel → Todo</b>.</p>
+    <label class="field small" for="bPass">Escribe tu contraseña para confirmar<input id="bPass" type="password" autocomplete="current-password"></label>
+    <div class="note" id="err"></div>
+    <div class="btns"><button class="btn" data-close>Cancelar</button><button class="btn danger" id="ok">Borrar definitivamente</button></div>`);
+  sheet.querySelector("#ok").onclick=async function(){
+    const pass=sheet.querySelector("#bPass").value,err=sheet.querySelector("#err");if(!pass){err.textContent="Escribe tu contraseña.";return}
+    this.disabled=true;this.textContent="Borrando…";
+    try{
+      const u=_auth.currentUser;
+      await u.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(u.email,pass));
+      const base=window._base;
+      for(const k of ["gastos","fijos","metas","config"]){const s=await base.collection(k).get();for(const d of s.docs)await d.ref.delete()}
+      unsubs.forEach(f=>f());unsubs=[];
+      await u.delete();
+      closeSheet();toast("Tu cuenta y tus datos se han borrado");
+    }catch(e){this.disabled=false;this.textContent="Borrar definitivamente";
+      err.textContent=(e.code==="auth/wrong-password"||e.code==="auth/invalid-credential"||e.code==="auth/invalid-login-credentials")?"Contraseña incorrecta.":"No se ha podido borrar. Revisa tu conexión e inténtalo de nuevo."}
   };
 }
 
@@ -351,7 +386,13 @@ function vMas(){
   const metas=Object.values(state.metas);
   const n=Object.keys(state.mov).length;
   return `
-  <div class="card"><div class="row"><div style="min-width:0"><div style="font-weight:700">${esc(me&&me.displayName||"Mi cuenta")}</div><div class="small" style="overflow:hidden;text-overflow:ellipsis">${esc(me&&me.email||"")}</div></div><button class="btn sm" data-act="salir">Cerrar sesión</button></div></div>
+  <div class="card"><h3 style="margin-bottom:10px">Cuenta</h3>
+    <div class="row" style="margin-bottom:6px"><div style="min-width:0"><div style="font-weight:600">${esc(me&&me.displayName||"Sin nombre")}</div><div class="small" style="overflow:hidden;text-overflow:ellipsis">${esc(me&&me.email||"")}</div></div><button class="btn sm" data-act="salir">Cerrar sesión</button></div>
+    <div class="menu-item" data-act="nombre">${icoHTML({i:"tag",c:""})}<div><div style="font-weight:600">Cambiar nombre</div></div><span class="chev">${svg("chevR")}</span></div>
+    <div class="menu-item" data-act="clave">${icoHTML({i:"shield",c:""})}<div><div style="font-weight:600">Cambiar contraseña</div><div class="small">Te enviamos un email para hacerlo</div></div><span class="chev">${svg("chevR")}</span></div>
+    <div class="menu-item" data-act="privacidad">${icoHTML({i:"book",c:""})}<div><div style="font-weight:600">Privacidad y condiciones</div></div><span class="chev">${svg("chevR")}</span></div>
+    <div class="menu-item" data-act="borrar">${icoHTML({i:"alert",c:"#b42318"})}<div><div style="font-weight:600;color:var(--neg)">Borrar mi cuenta</div><div class="small">Elimina tu cuenta y todos tus datos</div></div><span class="chev">${svg("chevR")}</span></div>
+  </div>
   <div class="card">
     <div class="row" style="margin-bottom:6px"><h3>Gastos e ingresos fijos</h3><button class="btn sm" data-act="nuevofijo">${svg("plus")}Añadir</button></div>
     <div class="small" style="margin-bottom:6px">Se apuntan solos cada mes el día que elijas.${fijos.length?` Al mes: <b>${fmt(fG)}</b> en gastos${fI?` y <b>${fmt(fI)}</b> en ingresos`:""}.`:""}</div>
@@ -497,7 +538,7 @@ function wire(el){
   el.querySelectorAll("[data-qcat]").forEach(b=>b.onclick=()=>{q.cat=b.dataset.qcat;render()});
   el.querySelectorAll("[data-buscarcat]").forEach(b=>b.onclick=()=>{q={texto:"",cat:b.dataset.buscarcat,tipo:"gasto"};setView("buscar")});
   const qt=el.querySelector("#qtext");if(qt)qt.oninput=()=>{q.texto=qt.value;render()};
-  el.querySelectorAll("[data-act]").forEach(b=>b.onclick=()=>({presupuesto:openBudget,limites:openLimits,categorias:openCats,exportar:openExport,importar:openImport,salir:()=>{if(confirmSalir()){_auth.signOut()}},
+  el.querySelectorAll("[data-act]").forEach(b=>b.onclick=()=>({presupuesto:openBudget,limites:openLimits,categorias:openCats,exportar:openExport,importar:openImport,nombre:openNombre,clave:sendReset,privacidad:()=>{location.href="privacidad.html"},borrar:openBorrar,salir:()=>{if(confirmSalir()){_auth.signOut()}},
     nuevofijo:()=>openFijo(),nuevameta:()=>openMeta(),metas:()=>{setView("mas");setTimeout(()=>document.getElementById("metas")?.scrollIntoView({behavior:"smooth"}),50)}})[b.dataset.act]());
 }
 let salirT=0;function confirmSalir(){const b=document.querySelector('[data-act="salir"]');if(Date.now()-salirT<4000)return true;salirT=Date.now();if(b)b.textContent="¿Seguro? Pulsa otra vez";return false}
